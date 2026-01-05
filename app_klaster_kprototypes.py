@@ -574,7 +574,7 @@ if main == "Beranda":
 
 
     st.markdown("""
-    Aplikasi ini dirancang untuk melakukan klasterisasi menggunakan algoritma K-Prototyoes dengan mengelompokkan pemohon paspor ke dalam beberapa klaster yang memiliki karakteristik serupa
+    Aplikasi ini dirancang untuk melakukan klasterisasi menggunakan algoritma K-Prototypes dengan mengelompokkan pemohon paspor ke dalam beberapa klaster yang memiliki karakteristik serupa
 
     Fitur utama dari aplikasi ini mencakup:
                 
