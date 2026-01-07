@@ -373,6 +373,106 @@ def save_excel_with_clusters(original_df, df_representative, labels, now, best_k
     return filename, buffer
 
 
+# ===============================
+# REKOMENDASI
+# ===============================
+
+def buat_rekomendasi_pelayanan(data_k, wilayah_dominan):
+    rekomendasi = []
+
+    usia_min = data_k['usia_tahun'].min()
+    usia_max = data_k['usia_tahun'].max()
+
+    # ==========================
+    # ANAK (<17 tahun)
+    # ==========================
+    if usia_min < 17:
+        rekomendasi.append(
+            "Keberadaan pemohon anak menunjukkan bahwa pelayanan paspor perlu dilakukan dengan "
+            "pendekatan berbasis keluarga, melalui penyederhanaan proses administrasi, "
+            "penguatan verifikasi dokumen orang tua atau wali, serta penggabungan alur layanan "
+            "agar pengurusan paspor anak dan orang tua dapat berjalan lebih efisien."
+        )
+
+    # ==========================
+    # USIA PRODUKTIF (17–40)
+    # ==========================
+    if (data_k['usia_tahun'].between(17, 40)).any():
+        rekomendasi.append(
+            "Dominasi pemohon usia produktif menjadi dasar bagi pengambilan keputusan pelayanan ke depan "
+            "untuk memprioritaskan penguatan kapasitas layanan cepat dan digital, "
+            "seperti perluasan layanan daring, optimalisasi sistem antrean, "
+            "serta penyesuaian jam dan kapasitas layanan pada periode keberangkatan kerja atau pendidikan."
+        )
+
+    # ==========================
+    # SOSIAL–KELUARGA (41–70)
+    # ==========================
+    if (data_k['usia_tahun'].between(41, 70)).any():
+        rekomendasi.append(
+            "Pemohon pada kelompok usia dewasa hingga lanjut memerlukan pelayanan dengan penyampaian "
+            "informasi yang lebih jelas dan terstruktur, terutama pada tahap pendaftaran, penjadwalan, "
+            "dan pemenuhan persyaratan administrasi, agar seluruh alur pelayanan dapat dipahami dengan baik."
+        )
+
+    # ==========================
+    # LANSIA (>70)
+    # ==========================
+    if usia_max > 70:
+        rekomendasi.append(
+            "Adanya pemohon lansia hingga sangat lanjut menjadi dasar bagi perumusan kebijakan "
+            "layanan inklusif di masa depan, seperti penguatan layanan prioritas, "
+            "pengembangan skema pendampingan berkelanjutan, serta perluasan layanan jemput bola "
+            "untuk menjamin akses pelayanan keimigrasian yang setara."
+        )
+
+    # ==========================
+    # JENIS KELAMIN DOMINAN
+    # ==========================
+    jk_dominan = data_k['jenis_kelamin'].mode()[0]
+    jk_prop = (data_k['jenis_kelamin'] == jk_dominan).mean()
+
+    if jk_dominan.lower().startswith('p') and jk_prop >= 0.55:
+        rekomendasi.append(
+            "Dominasi pemohon perempuan dapat menjadi pertimbangan dalam perencanaan lingkungan "
+            "dan desain layanan keimigrasian ke depan, khususnya terkait aspek kenyamanan, keamanan, "
+            "dan penyediaan fasilitas pendukung yang ramah bagi perempuan."
+        )
+
+    # ==========================
+    # STATUS PENGAMBILAN PASPOR
+    # ==========================
+    tingkat_pengambilan = (
+        data_k['status']
+        .value_counts(normalize=True)
+        .get("Sudah Diambil", 0) * 100
+    )
+
+    if tingkat_pengambilan >= 90:
+        rekomendasi.append(
+            "Tingginya tingkat pengambilan paspor menunjukkan bahwa proses pelayanan telah berjalan "
+            "dengan baik, sehingga pola pelayanan yang diterapkan dapat dipertahankan."
+        )
+    else:
+        rekomendasi.append(
+            "Masih terdapat pemohon yang belum menyelesaikan pengambilan paspor, sehingga diperlukan "
+            "pendampingan dan sosialisasi agar seluruh tahapan pelayanan dapat diselesaikan."
+        )
+
+    # ==========================
+    # WILAYAH DOMINAN
+    # ==========================
+    rekomendasi.append(
+        f"Konsentrasi pemohon dari wilayah {wilayah_dominan} dapat dijadikan dasar perencanaan "
+        "kebijakan pelayanan keimigrasian berbasis wilayah, seperti pengaturan kapasitas layanan, "
+        "penjadwalan layanan khusus, atau pengembangan layanan jemput bola pada wilayah dengan "
+        "intensitas permohonan tinggi."
+    )
+
+    return rekomendasi
+
+
+
 from io import BytesIO
 
 def save_visuals_pdf(df_final, now, best_k):
@@ -965,6 +1065,30 @@ elif main == "Klasterisasi":
                 st.markdown(f"- **Jenis kelamin dominan** : {jk_label} ({jk_prop[jk_dominan]:.2f}%)")
                 st.markdown(f"- **Status pengambilan dominan** : {status_dominan} ({status_prop[status_dominan]:.2f}%)")
                 st.markdown(f"- **5 tempat lahir terbanyak** : {tempat_teks}")
+            
+            # ================================
+            # REKOMENDASI PELAYANAN
+            # ================================
+            st.subheader("Rekomendasi Pelayanan Berdasarkan Hasil Klasterisasi")
+
+            for k in sorted(df_final['cluster'].unique()):
+                data_k = df_final[df_final['cluster'] == k]
+
+                wilayah_dominan = data_k['tempat_lahir'].mode()[0]
+
+                rekomendasi = buat_rekomendasi_pelayanan(
+                    data_k,
+                    wilayah_dominan
+                )
+
+                st.markdown(f"### Klaster {k}")
+                st.markdown("**Rekomendasi Pelayanan:**")
+
+                for r in rekomendasi:
+                    st.write(f"- {r}")
+
+                st.divider()
+
 
             
             # ==============================
