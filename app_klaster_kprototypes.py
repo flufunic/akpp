@@ -445,7 +445,7 @@ def buat_rekomendasi_pelayanan(data_k, wilayah_dominan):
     tingkat_pengambilan = (
         data_k['status']
         .value_counts(normalize=True)
-        .get("Sudah Diambil", 0) * 100
+        .get("diambil", 0) * 100
     )
 
     if tingkat_pengambilan >= 90:
