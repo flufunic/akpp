@@ -399,7 +399,7 @@ def buat_rekomendasi_pelayanan(data_k, wilayah_dominan):
     # ==========================
     if (data_k['usia_tahun'].between(17, 45)).any():
         rekomendasi.append(
-            "Dominasi pemohon usia remaja akhir, dewasa awal, dan dewasa akhir menjadi dasar bagi pengambilan keputusan pelayanan ke depan "
+            "Adanya pemohon usia remaja akhir, dewasa awal, dan dewasa akhir menjadi dasar bagi pengambilan keputusan pelayanan ke depan "
             "untuk memprioritaskan penguatan kapasitas layanan cepat dan digital, "
             "seperti perluasan layanan daring, optimalisasi sistem antrean, "
             "serta penyesuaian jam dan kapasitas layanan pada periode keberangkatan kerja atau pendidikan."
