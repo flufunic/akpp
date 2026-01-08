@@ -388,39 +388,39 @@ def buat_rekomendasi_pelayanan(data_k, wilayah_dominan):
     # ==========================
     if usia_min < 17:
         rekomendasi.append(
-            "Keberadaan pemohon anak menunjukkan bahwa pelayanan paspor perlu dilakukan dengan "
+            "Keberadaan pemohon anak serta remaja awal menunjukkan bahwa pelayanan paspor perlu dilakukan dengan "
             "pendekatan berbasis keluarga, melalui penyederhanaan proses administrasi, "
             "penguatan verifikasi dokumen orang tua atau wali, serta penggabungan alur layanan "
             "agar pengurusan paspor anak dan orang tua dapat berjalan lebih efisien."
         )
 
     # ==========================
-    # USIA PRODUKTIF (17–40)
+    # USIA PRODUKTIF (17–45)
     # ==========================
-    if (data_k['usia_tahun'].between(17, 40)).any():
+    if (data_k['usia_tahun'].between(17, 45)).any():
         rekomendasi.append(
-            "Dominasi pemohon usia produktif menjadi dasar bagi pengambilan keputusan pelayanan ke depan "
+            "Dominasi pemohon usia remaja akhir, dewasa awal, dan dewasa akhir menjadi dasar bagi pengambilan keputusan pelayanan ke depan "
             "untuk memprioritaskan penguatan kapasitas layanan cepat dan digital, "
             "seperti perluasan layanan daring, optimalisasi sistem antrean, "
             "serta penyesuaian jam dan kapasitas layanan pada periode keberangkatan kerja atau pendidikan."
         )
 
     # ==========================
-    # SOSIAL–KELUARGA (41–70)
+    # SOSIAL–KELUARGA (46–65)
     # ==========================
-    if (data_k['usia_tahun'].between(41, 70)).any():
+    if (data_k['usia_tahun'].between(46, 65)).any():
         rekomendasi.append(
-            "Pemohon pada kelompok usia dewasa hingga lanjut memerlukan pelayanan dengan penyampaian "
+            "Pemohon pada kelompok usia lansia awal dan lansia akhir memerlukan pelayanan dengan penyampaian "
             "informasi yang lebih jelas dan terstruktur, terutama pada tahap pendaftaran, penjadwalan, "
             "dan pemenuhan persyaratan administrasi, agar seluruh alur pelayanan dapat dipahami dengan baik."
         )
 
     # ==========================
-    # LANSIA (>70)
+    # LANSIA (>65)
     # ==========================
-    if usia_max > 70:
+    if usia_max > 65:
         rekomendasi.append(
-            "Adanya pemohon lansia hingga sangat lanjut menjadi dasar bagi perumusan kebijakan "
+            "Adanya pemohon manula hingga sangat lanjut menjadi dasar bagi perumusan kebijakan "
             "layanan inklusif di masa depan, seperti penguatan layanan prioritas, "
             "pengembangan skema pendampingan berkelanjutan, serta perluasan layanan jemput bola "
             "untuk menjamin akses pelayanan keimigrasian yang setara."
