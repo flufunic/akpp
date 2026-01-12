@@ -237,7 +237,33 @@ def preprocess_full(df, mapping, perform_reduction=True):
         st_col + "_label": "status_label"
     })
 
+    # ============================
+    # AMBIL WILAYAH UNIK (REFERENSI)
+    # ============================
+    wilayah_unik = (
+        df_work["tempat_lahir"]
+        .dropna()
+        .str.title()
+        .unique()
+    )
+
+    report["jumlah_wilayah_unik"] = len(wilayah_unik)
+    report["contoh_wilayah"] = wilayah_unik[:10].tolist()
+
+    # (opsional) wilayah dominan
+    wilayah_dominan = (
+        df_work["tempat_lahir"]
+        .value_counts()
+        .head(20)
+        .index
+        .tolist()
+    )
+
+    report["wilayah_dominan"] = wilayah_dominan
+
+
     return df_work.reset_index(drop=True), df_reduced.reset_index(drop=True), report
+
 # --------------------------
 # Fungsi K-Prototypes & DBI
 # --------------------------
@@ -376,8 +402,17 @@ def save_excel_with_clusters(original_df, df_representative, labels, now, best_k
 # ===============================
 # REKOMENDASI
 # ===============================
+def kategori_jarak(jarak):
+    if jarak is None:
+        return "tidak_diketahui"
+    elif jarak <= 50:
+        return "dekat"
+    elif jarak <= 100:
+        return "menengah"
+    else:
+        return "jauh"
 
-def buat_rekomendasi_pelayanan(data_k, wilayah_dominan):
+def buat_rekomendasi_pelayanan(data_k, wilayah_dominan, df_wilayah_ref):
     rekomendasi = []
 
     usia_min = data_k['usia_tahun'].min()
@@ -410,9 +445,11 @@ def buat_rekomendasi_pelayanan(data_k, wilayah_dominan):
     # ==========================
     if (data_k['usia_tahun'].between(46, 65)).any():
         rekomendasi.append(
-            "Pemohon pada kelompok usia lansia awal dan lansia akhir memerlukan pelayanan dengan penyampaian "
-            "informasi yang lebih jelas dan terstruktur, terutama pada tahap pendaftaran, penjadwalan, "
-            "dan pemenuhan persyaratan administrasi, agar seluruh alur pelayanan dapat dipahami dengan baik."
+            "Pemohon pada kelompok usia lansia awal dan lansia akhir memerlukan pelayanan dengan "
+            "penyampaian informasi yang lebih jelas dan terstruktur, terutama pada tahap pendaftaran, "
+            "penjadwalan, dan pemenuhan persyaratan administrasi. Optimalisasi pelayanan dapat dilakukan "
+            "melalui pendampingan langsung oleh petugas serta pemanfaatan mekanisme pengambilan paspor "
+            "yang dapat diwakilkan oleh anggota keluarga."
         )
 
     # ==========================
@@ -420,10 +457,11 @@ def buat_rekomendasi_pelayanan(data_k, wilayah_dominan):
     # ==========================
     if usia_max > 65:
         rekomendasi.append(
-            "Adanya pemohon manula hingga sangat lanjut menjadi dasar bagi perumusan kebijakan "
-            "layanan inklusif di masa depan, seperti penguatan layanan prioritas, "
-            "pengembangan skema pendampingan berkelanjutan, serta perluasan layanan jemput bola "
-            "untuk menjamin akses pelayanan keimigrasian yang setara."
+            "Adanya pemohon manula hingga sangat lanjut menjadi dasar bagi perumusan kebijakan layanan "
+            "inklusif yang lebih adaptif, seperti penguatan layanan prioritas, pendampingan berkelanjutan, "
+            "serta optimalisasi mekanisme pengambilan paspor melalui perwakilan keluarga dan layanan "
+            "pengiriman paspor melalui pos, guna menjamin akses pelayanan keimigrasian yang setara tanpa "
+            "mengharuskan kehadiran fisik pemohon secara berulang."
         )
 
     # ==========================
@@ -460,18 +498,84 @@ def buat_rekomendasi_pelayanan(data_k, wilayah_dominan):
         )
 
     # ==========================
-    # WILAYAH DOMINAN
+    # WILAYAH DOMINAN (AKSES LAYANAN)
     # ==========================
-    rekomendasi.append(
-        f"Konsentrasi pemohon dari wilayah {wilayah_dominan} dapat dijadikan dasar perencanaan "
-        "kebijakan pelayanan keimigrasian berbasis wilayah, seperti pengaturan kapasitas layanan, "
-        "penjadwalan layanan khusus, atau pengembangan layanan jemput bola pada wilayah dengan "
-        "intensitas permohonan tinggi."
-    )
+    from collections import defaultdict
 
+    kelompok = defaultdict(list)
+    for w in wilayah_dominan:
+        row = df_wilayah_ref[df_wilayah_ref["wilayah"] == w]
+
+        if row.empty:
+            kelompok["data_tidak_tersedia"].append(w)
+            continue
+
+        ada_mpp = row.iloc[0]["ada_mpp"]
+        jarak = row.iloc[0]["jarak_km"]
+        kat_jarak = kategori_jarak(jarak)
+
+        if jarak == 0:
+            kelompok["lokasi_kanim"].append(w)
+
+        elif ada_mpp and kat_jarak == "dekat":
+            kelompok["mpp_dekat"].append(w)
+
+        elif ada_mpp and kat_jarak in ["menengah", "jauh"]:
+            kelompok["mpp_menengah_jauh"].append(w)
+
+        else:
+            kelompok["tanpa_mpp_jauh"].append(w)
+
+
+    def gabung_wilayah(wilayah):
+        if len(wilayah) == 1:
+            return wilayah[0]
+        return ", ".join(wilayah[:-1]) + " dan " + wilayah[-1]
+
+    if kelompok["data_tidak_tersedia"]:
+        wilayah = gabung_wilayah(kelompok["data_tidak_tersedia"])
+        rekomendasi.append(
+            f"Wilayah {wilayah} memerlukan evaluasi lanjutan karena data jarak dan fasilitas pelayanan belum tersedia."
+        )
+
+    if kelompok["lokasi_kanim"]:
+        wilayah = gabung_wilayah(kelompok["lokasi_kanim"])
+        rekomendasi.append(
+            f"Wilayah {wilayah} merupakan lokasi Kantor Imigrasi Cilacap. Pelayanan pengambilan paspor direkomendasikan "
+            "untuk dipusatkan langsung di Kantor Imigrasi dengan penguatan manajemen antrean, penyesuaian kapasitas "
+            "layanan, serta optimalisasi layanan pengiriman paspor melalui pos untuk mengurangi kepadatan layanan tatap muka."
+        )
+
+    if kelompok["mpp_dekat"]:
+        wilayah = gabung_wilayah(kelompok["mpp_dekat"])
+        rekomendasi.append(
+            f"Wilayah {wilayah} relatif dekat dan telah memiliki Mal Pelayanan Publik yang menyediakan layanan "
+            "keimigrasian. Pengarahan pelayanan dapat dilakukan dengan mengarahkan pemohon untuk memilih MPP "
+            "sebagai lokasi layanan melalui sistem pendaftaran M-Paspor, serta melalui penyampaian informasi "
+            "resmi oleh petugas, sehingga beban pelayanan di Kanim Cilacap dapat dikurangi."
+        )
+
+    if kelompok["mpp_menengah_jauh"]:
+        wilayah = gabung_wilayah(kelompok["mpp_menengah_jauh"])
+        rekomendasi.append(
+            f"Wilayah {wilayah} memiliki Mal Pelayanan Publik yang menyediakan layanan keimigrasian dan berjarak "
+            "menengah hingga jauh dari Kanim Cilacap. Oleh karena itu, diperlukan pengarahan pelayanan melalui "
+            "optimalisasi pemilihan lokasi MPP pada aplikasi M-Paspor, pengaturan jadwal layanan keimigrasian "
+            "di MPP, serta pemanfaatan layanan pengiriman paspor melalui pos untuk meminimalkan kebutuhan "
+            "kedatangan pemohon ke Kantor Imigrasi."
+        )
+
+    if kelompok["tanpa_mpp_jauh"]:
+        wilayah = gabung_wilayah(kelompok["tanpa_mpp_jauh"])
+        rekomendasi.append(
+            f"Wilayah {wilayah} berjarak jauh dan belum memiliki Mal Pelayanan Publik, sehingga pengarahan pelayanan "
+            "difokuskan pada pemanfaatan layanan pengiriman paspor melalui pos sebagai kanal utama pengambilan "
+            "paspor, serta pelaksanaan layanan jemput bola secara terbatas dan terjadwal untuk wilayah dengan "
+            "intensitas permohonan tinggi."
+        )
     return rekomendasi
 
-
+   
 
 from io import BytesIO
 
@@ -622,14 +726,39 @@ import base64
 
 with st.sidebar:
     st.markdown("""
-        <style>
-            .sidebar-logo {
-                width: 120px;    
-                margin-left: auto;
-                margin-right: auto;
-                display: block;
-            }
-        </style>
+    <style>
+    section[data-testid="stSidebar"] {
+        background-color: #0A2540;
+    }
+
+    section[data-testid="stSidebar"] * {
+        color: white;
+    }
+
+    .sidebar-logo {
+        width: 120px;
+        margin-left: auto;
+        margin-right: auto;
+        display: block;
+    }
+
+    section[data-testid="stSidebar"] hr {
+        border-color: rgba(255,255,255,0.4);
+    }
+
+    /* TOMBOL RESET */
+    section[data-testid="stSidebar"] div[data-testid="stButton"] > button {
+        background-color: transparent;
+        color: white;
+        font-weight: 600;
+        border: 1.5px solid rgba(255,255,255,0.9);
+        border-radius: 8px;
+    }
+
+    section[data-testid="stSidebar"] div[data-testid="stButton"] > button:hover {
+        background-color: rgba(255,255,255,0.12);
+    }
+    </style>
     """, unsafe_allow_html=True)
 
     with open("logo.png", "rb") as f:
@@ -650,54 +779,178 @@ with st.sidebar:
         """,
         unsafe_allow_html=True
     )
+    # ======================================================
+    # DIALOG KONFIRMASI RESET
+    # ======================================================
+    @st.dialog("Konfirmasi Muat Ulang Proses")
+    def dialog_reset():
+        st.warning(
+            "⚠️ Semua data, hasil preprocessing, dan hasil klasterisasi "
+            "akan dihapus. Apakah anda yakin untuk muat ulang proses?"
+        )
 
-    main = st.radio(
-        "Menu Utama:",
-        ["Beranda", "Klasterisasi", "Muat Ulang Proses"]
-    )
+        # Trik pusatkan tombol
+        col_left, col_center, col_right = st.columns([1, 2, 1])
+
+        with col_center:
+            if st.button("Ya, Reset Proses", use_container_width=True):
+                keys_to_clear = [
+                    'raw_df',
+                    'mapping',
+                    'clean_df',
+                    'reduced_df',
+                    'preproc_report',
+                    'df_final',
+                    'kproto_models',
+                    'dbi_scores',
+                    'labels_for_k',
+                    'best_k',
+                    'merged',
+                    'labels_rep',
+                    'cluster_results',
+                    'klaster_sudah_dijalankan',
+                    'menu_utama',
+                    'tahap_klasterisasi'
+                ]
+
+                for k in keys_to_clear:
+                    if k in st.session_state:
+                        del st.session_state[k]
+
+                st.success("Proses berhasil direset. Silakan mulai dari awal.")
+                st.rerun()
+
+    # ======================================================
+    # SIDEBAR
+    # ======================================================
+    with st.sidebar:
+
+        # -------------------------
+        # MENU UTAMA
+        # -------------------------
+        main = st.radio(
+            "Menu Utama:",
+            ["Beranda", "Klasterisasi"],
+            key="menu_utama",
+            index=0
+        )
+
+        # -------------------------
+        # TAHAP KLASTERISASI
+        # -------------------------
+        stage = None
+        if main == "Klasterisasi":
+            col_space, col_radio = st.columns([1, 10])
+
+            with col_radio:
+                stage = st.radio(
+                    "Tahap Klasterisasi",
+                    [
+                        "Unggah Data",
+                        "Data Preprocessing",
+                        "Klasterisasi",
+                        "Visualisasi"
+                    ],
+                    key="tahap_klasterisasi"
+                )
+
+
+        # -------------------------
+        # TOMBOL RESET (PEMICU POPUP)
+        # -------------------------
+        if st.button("🔄 Muat Ulang Proses"):
+            dialog_reset()
+
 
 
 # -------------------------
 # BERANDA
 # -------------------------
 if main == "Beranda":
+
     st.markdown(
-    """
-    <h1 style="text-align: center;">
-        Aplikasi Klasterisasi Data Pemohon Paspor Berdasarkan Karakteristik Pemohon
-        Menggunakan Algoritma K-Prototypes
-    </h1>
-    <hr style="border: 1px solid #999; width: 80%; margin: 20px auto 80px auto;">
-    """,
+        "<h1 style='text-align:center; margin-bottom:0px'>"
+        "Aplikasi Klasterisasi Data Pemohon Paspor Berdasarkan Karakteristik Pemohon Menggunakan Algoritma K-Prototypes<br>"
+        "<span style='font-size:16px; color:#555;'>",
+        unsafe_allow_html=True
+    )
+
+    st.markdown("<hr style='width:80%; margin:20px auto;'>", unsafe_allow_html=True)
+
+    st.markdown(
+        """
+        <p style="text-align: center;">
+        Aplikasi ini dirancang untuk mendukung proses analisis data pemohon paspor melalui
+        metode klasterisasi menggunakan algoritma K-Prototypes. Sistem ini mengelompokkan
+        pemohon ke dalam beberapa klaster berdasarkan kesamaan karakteristik numerik dan
+        kategorikal sehingga dapat membantu pengambilan keputusan berbasis data.
+        </p>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+    st.markdown(
+    "<h5 style='text-align:center; margin-bottom:0px;'>"
+    "Fitur Utama Aplikasi"
+    "</h3>",
     unsafe_allow_html=True
-)
+    )
+    col1, col2 = st.columns(2, gap="large")
+
+    with col1:
+        st.markdown(
+            """
+            <ul style="
+                list-style-type: disc;
+                list-style-position: inside;
+                padding-left: 0;
+                margin: 0 auto;
+                width: fit-content;
+                text-align: left;
+            ">
+                <li>Unggah dataset pemohon paspor</li>
+                <li>Data preprocessing</li>
+                <li>Penentuan klaster optimal (DBI)</li>
+            </ul>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with col2:
+        st.markdown(
+            """
+            <ul style="
+                list-style-type: disc;
+                list-style-position: inside;
+                padding-left: 0;
+                margin: 0 auto;
+                width: fit-content;
+                text-align: left;
+            ">
+                <li>Klasterisasi K-Prototypes</li>
+                <li>Visualisasi hasil klaster</li>
+                <li>Unduh hasil analisis</li>
+            </ul>
+            """,
+            unsafe_allow_html=True
+        )
 
 
-    st.markdown("""
-    Aplikasi ini dirancang untuk melakukan klasterisasi menggunakan algoritma K-Prototypes dengan mengelompokkan pemohon paspor ke dalam beberapa klaster yang memiliki karakteristik serupa
 
-    Fitur utama dari aplikasi ini mencakup:
-                
-    1. Unggah dataset pemohon paspor yang akan digunakan dalam proses klasterisasi
-    2. Data Preprocessing untuk menyiapkan data melalui proses pembersihan dan standarisasi data
-    3. Penentuan jumlah klaster optimal menggunakan evaluasi Davies Bouldin Index
-    4. Klasterisasi pemohon paspor menggunakan algoritma K-prototypes
-    5. Visualisasi hasil klasterisasi
-    6. Fitur unduh hasil klasterisasi dan visualisasi      
-    """)
 
 # -------------------------
 # KLASTERISASI 
 # -------------------------
 elif main == "Klasterisasi":
-    st.title("Klasterisasi")
-    stage = st.selectbox("Pilih Tahap:", ["Unggah Data", "Data Preprocessing", "Klasterisasi", "Visualisasi"])
+    st.title("Tahap Klasterisasi")
+    # stage = st.selectbox("Pilih Tahap:", ["Unggah Data", "Data Preprocessing", "Klasterisasi", "Visualisasi"])
 
    # -------------------------
     # UNGGAH DATA
     # -------------------------
     if stage == "Unggah Data":
-        st.header("📤 Unggah Dataset")
+        st.header("Unggah Dataset")
 
         uploaded = st.file_uploader("Unggah file Excel (.xlsx)", type=["xlsx"])
 
@@ -733,7 +986,7 @@ elif main == "Klasterisasi":
         # JIKA TIDAK ADA FILE BARU TAPI SESSION STATE MASIH ADA
         # ---------------------------------------------------------
         elif st.session_state['raw_df'] is not None:
-            st.info("📁 Menggunakan data yang sudah diunggah sebelumnya.")
+            st.info("Menggunakan data yang sudah diunggah sebelumnya.")
 
             df = st.session_state['raw_df']
             mapping = st.session_state['mapping']
@@ -763,7 +1016,7 @@ elif main == "Klasterisasi":
     # DATA PREPROCESSING
     # -------------------------
     elif stage == "Data Preprocessing":
-        st.header("🧹 Data Preprocessing")
+        st.header("Data Preprocessing")
 
         if st.session_state['raw_df'] is None or st.session_state['mapping'] is None:
             st.warning("Unggah dataset dulu di tahap 'Unggah Data' dan pastikan mapping lengkap.")
@@ -885,13 +1138,102 @@ elif main == "Klasterisasi":
                         st.dataframe(st.session_state['reduced_df'][['usia','jenis_kelamin','tempat_lahir','status']])
                     st.markdown("---")
 
+                    # ============================
+                    # TABEL REFERENSI WILAYAH
+                    # ============================
+
+                    wilayah_referensi = rpt.get("wilayah_dominan", [])
+
+                    df_wilayah = pd.DataFrame({
+                        "wilayah": wilayah_referensi,
+                        "jarak_km": [
+                            0,     # Cilacap
+                            40,    # Banyumas
+                            77,    # Kebumen
+                            117,   # Brebes
+                            123,   # Tegal
+                            88,    # Banjarnegara
+                            119,   # Ciamis
+                            60,    # Purbalingga
+                            380,   # Jakarta
+                            44,    # Purwokerto
+                            135,   # Tasikmalaya
+                            165,   # Cirebon
+                            298,   # Bandung
+                            129,   # Purworejo
+                            217,   # Semarang
+                            131,   # Pemalang
+                            197,   # Klaten
+                            217,   # Indramayu
+                            173,   # Magelang
+                            93     # Banjar
+                        ],
+                        "ada_mpp": [
+                            True,     # Cilacap
+                            True,     # Banyumas
+                            True,     # Kebumen
+                           False,     # Brebes
+                            True,     # Tegal
+                            True,     # Banjarnegara
+                           False,     # Ciamis
+                            True,     # Purbalingga
+                           False ,    # Jakarta
+                            True,     # Purwokerto
+                            False,    # Tasikmalaya
+                            False,    # Cirebon
+                            True,     # Bandung
+                            False,    # Purworejo
+                            False,    # Semarang
+                            False,    # Pemalang
+                            False,    # Klaten
+                            False,    # Indramayu
+                            False,    # Magelang
+                            False     # Banjar
+                        ]
+                    })
+                    st.session_state["df_wilayah"] = df_wilayah
+
+
+
+
+                    # st.subheader("📍 Informasi Wilayah (Hasil Preprocessing)")
+                    # st.metric(
+                    #     label="Jumlah Wilayah Unik (Tempat Lahir)",
+                    #     value=rpt.get("jumlah_wilayah_unik", 0)
+                    # )
+                    # st.markdown("**Contoh Wilayah (10 pertama):**")
+                    # st.write(rpt.get("contoh_wilayah", []))
+                    # st.markdown("**Wilayah Dominan (Top 10):**")
+                    # df_wilayah_dom = pd.DataFrame({
+                    #     "Wilayah": rpt.get("wilayah_dominan", [])
+                    # })
+
+                    # st.dataframe(df_wilayah_dom, use_container_width=True)
+                    # import matplotlib.pyplot as plt
+                    # st.markdown("**Distribusi Wilayah Dominan**")
+
+                    # fig, ax = plt.subplots()
+                    # df_wilayah_dom["Wilayah"].value_counts().plot(kind="bar", ax=ax)
+                    # st.pyplot(fig)
+
+                    # col1, col2, col3 = st.columns(3)
+
+                    # with col1:
+                    #     st.metric("Jumlah Wilayah Unik", rpt["jumlah_wilayah_unik"])
+
+                    # with col2:
+                    #     st.metric("Wilayah Dominan", len(rpt["wilayah_dominan"]))
+
+                    # with col3:
+                    #     st.metric("Contoh Wilayah", len(rpt["contoh_wilayah"]))
+
     
     # ==============================
     # Cari k terbaik & jalankan klaster
     # ==============================
     
     elif stage == "Klasterisasi":
-        st.header("🔢 Proses Klasterisasi")
+        st.header("Proses Klasterisasi")
 
         df_clean = st.session_state.get('clean_df')
         df_reduced = st.session_state.get('reduced_df')
@@ -1069,25 +1411,53 @@ elif main == "Klasterisasi":
             # ================================
             # REKOMENDASI PELAYANAN
             # ================================
-            st.subheader("Rekomendasi Pelayanan Berdasarkan Hasil Klasterisasi")
+            st.subheader("Rekomendasi Strategi Pelayanan Keimigrasian Berdasarkan Hasil Klasterisasi Pemohon Paspor")
 
             for k in sorted(df_final['cluster'].unique()):
                 data_k = df_final[df_final['cluster'] == k]
 
-                wilayah_dominan = data_k['tempat_lahir'].mode()[0]
-
-                rekomendasi = buat_rekomendasi_pelayanan(
-                    data_k,
-                    wilayah_dominan
+                # ambil TOP 5 wilayah dominan per klaster
+                wilayah_dominan = (
+                    data_k['tempat_lahir']
+                    .value_counts()
+                    .head(5)
+                    .index
+                    .tolist()
                 )
+                rekomendasi = buat_rekomendasi_pelayanan(
+                    data_k=data_k,
+                    wilayah_dominan=wilayah_dominan,
+                    df_wilayah_ref=st.session_state["df_wilayah"]
+                )
+
 
                 st.markdown(f"### Klaster {k}")
                 st.markdown("**Rekomendasi Pelayanan:**")
 
-                for r in rekomendasi:
-                    st.write(f"- {r}")
+                st.markdown(
+                    """
+                    <div style="text-align: justify;">
+                        <ul style="padding-left: 20px;">
+                            {}
+                        </ul>
+                    </div>
+                    """.format("".join(f"<li style='margin-bottom:8px;'>{r}</li>" for r in rekomendasi)),
+                    unsafe_allow_html=True
+                )
 
-                st.divider()
+            st.markdown(
+                    """
+                    <hr>
+                    <p style="font-size:13px; color:#666; text-align: justify;">
+                    <strong>Catatan:</strong> Rekomendasi pelayanan ini disusun berdasarkan hasil analisis dan klasterisasi
+                    data pemohon paspor menggunakan algoritma K-Prototypes. Implementasi rekomendasi dilakukan dengan
+                    mempertimbangkan kebijakan yang berlaku, kondisi operasional, serta kewenangan pengambilan keputusan
+                    oleh pimpinan unit kerja terkait.
+                    </p>
+                    """,
+                    unsafe_allow_html=True
+            )
+
 
 
             
@@ -1102,6 +1472,25 @@ elif main == "Klasterisasi":
                     now=st.session_state['now'],
                     best_k=st.session_state.get('best_k') or st.session_state.get('sel_k')
                 )
+
+                st.markdown("""
+                <style>
+                div[data-testid="stDownloadButton"] > button {
+                    background-color: #0A2540;
+                    color: white;
+                    border-radius: 6px;
+                    border: none;
+                    padding: 0.5em 1em;
+                    font-weight: 600;
+                }
+
+                div[data-testid="stDownloadButton"] > button:hover {
+                    background-color: #081E33;
+                    color: white;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+
                 st.download_button(
                     label="📥 Unduh Excel Hasil Klaster",
                     data=buffer,
@@ -1114,7 +1503,7 @@ elif main == "Klasterisasi":
     # -------------------------
     
     elif stage == "Visualisasi":
-        st.header("📊 Visualisasi Hasil Klasterisasi")
+        st.header("Visualisasi Hasil Klasterisasi")
 
         if st.session_state.get('df_final') is None:
             st.warning("Jalankan proses klasterisasi terlebih dahulu.")
@@ -1252,8 +1641,26 @@ elif main == "Klasterisasi":
         # =========================
         # DOWNLOAD PDF
         # =========================
+        st.markdown("""
+        <style>
+        div[data-testid="stDownloadButton"] > button {
+            background-color: #0A2540;
+            color: white;
+            border-radius: 6px;
+            border: none;
+            padding: 0.55em 1.2em;
+            font-weight: 600;
+        }
+
+        div[data-testid="stDownloadButton"] > button:hover {
+            background-color: #081E33;
+            color: white;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
         st.download_button(
-            label="📄 Unduh PDF Visualisasi",
+            label="📥 Unduh PDF Visualisasi",
             data=save_visuals_pdf(
                 df_final,
                 st.session_state['now'],
@@ -1267,15 +1674,15 @@ elif main == "Klasterisasi":
 # -------------------------
 # MUAT ULANG PROSES
 # -------------------------
-elif main == "Muat Ulang Proses":
-    if st.button("Muat Ulang Proses"):
-        keys = [
-            'raw_df','mapping','clean_df','reduced_df','preproc_report','df_final',
-            'kproto_models','dbi_scores','labels_for_k','best_k',
-            'merged','labels_rep','cluster_results','klaster_sudah_dijalankan'
-        ]
-        for k in keys:
-            if k in st.session_state:
-                del st.session_state[k]
-        st.session_state['now'] = datetime.now().strftime("%Y%m%d_%H%M%S")
-        st.success("Sudah direset. Muat ulang halaman atau pilih menu 'Beranda' untuk memulai lagi.")
+# elif main == "Muat Ulang Proses":
+#     if st.button("Muat Ulang Proses"):
+#         keys = [
+#             'raw_df','mapping','clean_df','reduced_df','preproc_report','df_final',
+#             'kproto_models','dbi_scores','labels_for_k','best_k',
+#             'merged','labels_rep','cluster_results','klaster_sudah_dijalankan'
+#         ]
+#         for k in keys:
+#             if k in st.session_state:
+#                 del st.session_state[k]
+#         st.session_state['now'] = datetime.now().strftime("%Y%m%d_%H%M%S")
+#         st.success("Sudah direset. Muat ulang halaman atau pilih menu 'Beranda' untuk memulai lagi.")
