@@ -772,8 +772,7 @@ with st.sidebar:
     st.markdown(
         """
         <div style="text-align: center; font-size: 15px; font-weight: bold;">
-            Aplikasi Klasterisasi Data Pemohon Paspor Berdasarkan Karakteristik Pemohon
-            Menggunakan Algoritma K-Prototypes
+            Aplikasi Klaster Pemohon Paspor
         </div>
         <hr style="border: 1px solid #999; width: 80%; margin: 20px auto 40px auto;">
         """,
@@ -951,6 +950,17 @@ elif main == "Klasterisasi":
     # -------------------------
     if stage == "Unggah Data":
         st.header("Unggah Dataset")
+        st.markdown("""
+        **Ketentuan Dataset:**
+        - Format file: **Excel (.xlsx)**
+        - Dataset harus memuat kolom berikut:
+          - Usia
+          - Jenis Kelamin
+          - Status Pengambilan
+          - Tempat Lahir
+        """)
+
+
 
         uploaded = st.file_uploader("Unggah file Excel (.xlsx)", type=["xlsx"])
 
