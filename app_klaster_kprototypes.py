@@ -1,9 +1,9 @@
-import streamlit as st
+import streamlit as st # type: ignore
 import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-from kmodes.kprototypes import KPrototypes
+from kmodes.kprototypes import KPrototypes # type: ignore
 from sklearn.preprocessing import StandardScaler, LabelEncoder, OneHotEncoder
 from sklearn.metrics import davies_bouldin_score
 from matplotlib.backends.backend_pdf import PdfPages
@@ -149,7 +149,7 @@ def preprocess_full(df, mapping, perform_reduction=True):
 
     invalid['tempat_lahir'] = {
         'count': int(len(invalid_tp_all)),
-        'examples': invalid_tp_all.head(5).to_dict(orient='records')
+        'examples': invalid_tp_all.to_dict(orient='records')  # Semua baris
     }
 
     df_work = df_work[~df_work.index.isin(invalid_tp_all.index)]
@@ -399,110 +399,112 @@ def save_excel_with_clusters(original_df, df_representative, labels, now, best_k
     return filename, buffer
 
 
-# ===============================
-# REKOMENDASI
-# ===============================
-def kategori_jarak(jarak):
-    if jarak is None:
-        return "tidak_diketahui"
-    elif jarak <= 50:
-        return "dekat"
-    elif jarak <= 100:
-        return "menengah"
-    else:
-        return "jauh"
-
 def buat_rekomendasi_pelayanan(data_k, wilayah_dominan, df_wilayah_ref):
     rekomendasi = []
 
-    usia_min = data_k['usia_tahun'].min()
-    usia_max = data_k['usia_tahun'].max()
+    # =====================================================
+    # 1. PROFIL USIA KLASTER
+    # =====================================================
+    prop_anak = data_k['usia_tahun'].between(0, 16).mean()
+    prop_produktif = data_k['usia_tahun'].between(17, 45).mean()
+    prop_dewasa_akhir = data_k['usia_tahun'].between(46, 65).mean()
+    prop_lansia = (data_k['usia_tahun'] > 65).mean()
 
-    # ==========================
-    # ANAK (<17 tahun)
-    # ==========================
-    if usia_min < 17:
-        rekomendasi.append(
-            "Keberadaan pemohon anak serta remaja awal menunjukkan bahwa pelayanan paspor perlu dilakukan dengan "
-            "pendekatan berbasis keluarga, melalui penyederhanaan proses administrasi, "
-            "penguatan verifikasi dokumen orang tua atau wali, serta penggabungan alur layanan "
-            "agar pengurusan paspor anak dan orang tua dapat berjalan lebih efisien."
+    prop_diambil = (
+        data_k['status']
+        .value_counts(normalize=True)
+        .get("diambil", 0)
+    )
+
+    # =====================================================
+    # 2. ARAH LAYANAN UTAMA KLASTER (KOMBINASI)
+    # =====================================================
+    if prop_lansia >= 0.20:
+        arah_layanan = (
+            "Layanan Prioritas Lansia dengan pendampingan administratif "
+            "dan optimalisasi pengiriman paspor melalui pos"
+        )
+    elif prop_produktif >= 0.50 and prop_diambil >= 0.90:
+        arah_layanan = (
+            "Layanan Reguler Berbasis Digital dengan penguatan sistem antrean "
+            "dan efisiensi waktu layanan"
+        )
+    else:
+        arah_layanan = (
+            "Pelayanan Reguler dengan pendampingan administratif "
+            "dan penguatan sosialisasi tahapan layanan"
         )
 
-    # ==========================
-    # USIA PRODUKTIF (17–45)
-    # ==========================
-    if (data_k['usia_tahun'].between(17, 45)).any():
+    rekomendasi.append(
+        f"Arah layanan utama klaster ini adalah {arah_layanan}, "
+        f"yang ditetapkan berdasarkan distribusi usia pemohon, "
+        f"pola penyelesaian layanan, serta kebutuhan akses layanan."
+    )
+
+    # =====================================================
+    # 3. REKOMENDASI BERDASARKAN KELOMPOK USIA
+    # =====================================================
+
+    # Anak & Remaja Awal
+    if prop_anak > 0:
         rekomendasi.append(
-            "Adanya pemohon usia remaja akhir, dewasa awal, dan dewasa akhir menjadi dasar bagi pengambilan keputusan pelayanan ke depan "
-            "untuk memprioritaskan penguatan kapasitas layanan cepat dan digital, "
-            "seperti perluasan layanan daring, optimalisasi sistem antrean, "
-            "serta penyesuaian jam dan kapasitas layanan pada periode keberangkatan kerja atau pendidikan."
+            "Keberadaan pemohon anak dan remaja awal menunjukkan perlunya "
+            "pendekatan pelayanan berbasis keluarga, dengan penyederhanaan "
+            "alur administrasi serta penguatan verifikasi dokumen orang tua atau wali."
         )
 
-    # ==========================
-    # SOSIAL–KELUARGA (46–65)
-    # ==========================
-    if (data_k['usia_tahun'].between(46, 65)).any():
+    # Usia Produktif (17–45)
+    if prop_produktif >= 0.30:
         rekomendasi.append(
-            "Pemohon pada kelompok usia lansia awal dan lansia akhir memerlukan pelayanan dengan "
-            "penyampaian informasi yang lebih jelas dan terstruktur, terutama pada tahap pendaftaran, "
-            "penjadwalan, dan pemenuhan persyaratan administrasi. Optimalisasi pelayanan dapat dilakukan "
-            "melalui pendampingan langsung oleh petugas serta pemanfaatan mekanisme pengambilan paspor "
-            "yang dapat diwakilkan oleh anggota keluarga."
+            "Dominasi pemohon usia produktif mengindikasikan kebutuhan terhadap "
+            "pelayanan yang cepat, fleksibel, dan terintegrasi secara digital, "
+            "terutama pada tahap pendaftaran dan pengaturan jadwal layanan."
         )
 
-    # ==========================
-    # LANSIA (>65)
-    # ==========================
-    if usia_max > 65:
+    # Dewasa Akhir (46–65)
+    if prop_dewasa_akhir >= 0.25:
         rekomendasi.append(
-            "Adanya pemohon manula hingga sangat lanjut menjadi dasar bagi perumusan kebijakan layanan "
-            "inklusif yang lebih adaptif, seperti penguatan layanan prioritas, pendampingan berkelanjutan, "
-            "serta optimalisasi mekanisme pengambilan paspor melalui perwakilan keluarga dan layanan "
-            "pengiriman paspor melalui pos, guna menjamin akses pelayanan keimigrasian yang setara tanpa "
-            "mengharuskan kehadiran fisik pemohon secara berulang."
+            "Proporsi pemohon usia dewasa akhir memerlukan penyampaian informasi "
+            "yang lebih jelas dan terstruktur, khususnya terkait persyaratan "
+            "dan tahapan administrasi pelayanan paspor."
         )
 
-    # ==========================
-    # JENIS KELAMIN DOMINAN
-    # ==========================
+    # Lansia (>65)
+    if prop_lansia > 0:
+        rekomendasi.append(
+            "Keberadaan pemohon lansia menuntut penyediaan layanan prioritas "
+            "melalui pendampingan langsung, penyederhanaan prosedur, layanan jemput bola, "
+            "serta pemanfaatan pengiriman paspor melalui pos untuk "
+            "mengurangi kebutuhan kunjungan ulang."
+        )
+
+    # =====================================================
+    # 4. JENIS KELAMIN DOMINAN
+    # =====================================================
     jk_dominan = data_k['jenis_kelamin'].mode()[0]
     jk_prop = (data_k['jenis_kelamin'] == jk_dominan).mean()
 
     if jk_dominan.lower().startswith('p') and jk_prop >= 0.55:
         rekomendasi.append(
-            "Dominasi pemohon perempuan dapat menjadi pertimbangan dalam perencanaan lingkungan "
-            "dan desain layanan keimigrasian ke depan, khususnya terkait aspek kenyamanan, keamanan, "
-            "dan penyediaan fasilitas pendukung yang ramah bagi perempuan."
+            "Dominasi pemohon perempuan menjadi pertimbangan dalam "
+            "penyediaan lingkungan layanan yang aman, nyaman, dan ramah perempuan."
         )
 
-    # ==========================
-    # STATUS PENGAMBILAN PASPOR
-    # ==========================
-    tingkat_pengambilan = (
-        data_k['status']
-        .value_counts(normalize=True)
-        .get("diambil", 0) * 100
-    )
-
-    if tingkat_pengambilan >= 90:
+    # =====================================================
+    # 5. POLA PENYELESAIAN LAYANAN
+    # =====================================================
+    if prop_diambil < 0.90:
         rekomendasi.append(
-            "Tingginya tingkat pengambilan paspor menunjukkan bahwa proses pelayanan telah berjalan "
-            "dengan baik, sehingga pola pelayanan yang diterapkan dapat dipertahankan."
-        )
-    else:
-        rekomendasi.append(
-            "Masih terdapat pemohon yang belum menyelesaikan pengambilan paspor, sehingga diperlukan "
-            "pendampingan dan sosialisasi agar seluruh tahapan pelayanan dapat diselesaikan."
+            "Masih terdapat pemohon yang belum menyelesaikan proses pengambilan paspor, "
+            "sehingga diperlukan penguatan mekanisme pengingat serta pendampingan layanan."
         )
 
-    # ==========================
-    # WILAYAH DOMINAN (AKSES LAYANAN)
-    # ==========================
+    # =====================================================
+    # 6. AKSES LAYANAN BERDASARKAN WILAYAH DOMINAN
+    # =====================================================
     from collections import defaultdict
-
     kelompok = defaultdict(list)
+
     for w in wilayah_dominan:
         row = df_wilayah_ref[df_wilayah_ref["wilayah"] == w]
 
@@ -512,68 +514,121 @@ def buat_rekomendasi_pelayanan(data_k, wilayah_dominan, df_wilayah_ref):
 
         ada_mpp = row.iloc[0]["ada_mpp"]
         jarak = row.iloc[0]["jarak_km"]
-        kat_jarak = kategori_jarak(jarak)
 
         if jarak == 0:
             kelompok["lokasi_kanim"].append(w)
-
-        elif ada_mpp and kat_jarak == "dekat":
+        elif ada_mpp and jarak <= 50:
             kelompok["mpp_dekat"].append(w)
-
-        elif ada_mpp and kat_jarak in ["menengah", "jauh"]:
-            kelompok["mpp_menengah_jauh"].append(w)
-
+        elif ada_mpp:
+            kelompok["mpp_jauh"].append(w)
         else:
-            kelompok["tanpa_mpp_jauh"].append(w)
+            kelompok["tanpa_mpp"].append(w)
 
-
-    def gabung_wilayah(wilayah):
-        if len(wilayah) == 1:
-            return wilayah[0]
-        return ", ".join(wilayah[:-1]) + " dan " + wilayah[-1]
-
-    if kelompok["data_tidak_tersedia"]:
-        wilayah = gabung_wilayah(kelompok["data_tidak_tersedia"])
-        rekomendasi.append(
-            f"Wilayah {wilayah} memerlukan evaluasi lanjutan karena data jarak dan fasilitas pelayanan belum tersedia."
-        )
+    def gabung_wilayah(w):
+        return ", ".join(w[:-1]) + " dan " + w[-1] if len(w) > 1 else w[0]
 
     if kelompok["lokasi_kanim"]:
-        wilayah = gabung_wilayah(kelompok["lokasi_kanim"])
         rekomendasi.append(
-            f"Wilayah {wilayah} merupakan lokasi Kantor Imigrasi Cilacap. Pelayanan pengambilan paspor direkomendasikan "
-            "untuk dipusatkan langsung di Kantor Imigrasi dengan penguatan manajemen antrean, penyesuaian kapasitas "
-            "layanan, serta optimalisasi layanan pengiriman paspor melalui pos untuk mengurangi kepadatan layanan tatap muka."
+            f"Wilayah {gabung_wilayah(kelompok['lokasi_kanim'])} merupakan lokasi "
+            f"Kantor Imigrasi Cilacap, sehingga pelayanan dapat dipusatkan langsung di kantor."
         )
 
     if kelompok["mpp_dekat"]:
-        wilayah = gabung_wilayah(kelompok["mpp_dekat"])
         rekomendasi.append(
-            f"Wilayah {wilayah} relatif dekat dan telah memiliki Mal Pelayanan Publik yang menyediakan layanan "
-            "keimigrasian. Pengarahan pelayanan dapat dilakukan dengan mengarahkan pemohon untuk memilih MPP "
-            "sebagai lokasi layanan melalui sistem pendaftaran M-Paspor, serta melalui penyampaian informasi "
-            "resmi oleh petugas, sehingga beban pelayanan di Kanim Cilacap dapat dikurangi."
+            f"Wilayah {gabung_wilayah(kelompok['mpp_dekat'])} memiliki MPP dengan jarak dekat, "
+            f"sehingga pemohon diarahkan memanfaatkan layanan keimigrasian di MPP."
         )
 
-    if kelompok["mpp_menengah_jauh"]:
-        wilayah = gabung_wilayah(kelompok["mpp_menengah_jauh"])
+    if kelompok["mpp_jauh"]:
         rekomendasi.append(
-            f"Wilayah {wilayah} memiliki Mal Pelayanan Publik yang menyediakan layanan keimigrasian dan berjarak "
-            "menengah hingga jauh dari Kanim Cilacap. Oleh karena itu, diperlukan pengarahan pelayanan melalui "
-            "optimalisasi pemilihan lokasi MPP pada aplikasi M-Paspor, pengaturan jadwal layanan keimigrasian "
-            "di MPP, serta pemanfaatan layanan pengiriman paspor melalui pos untuk meminimalkan kebutuhan "
-            "kedatangan pemohon ke Kantor Imigrasi."
+            f"Wilayah {gabung_wilayah(kelompok['mpp_jauh'])} memiliki MPP namun berjarak jauh, "
+            f"sehingga pengiriman paspor melalui pos menjadi alternatif layanan."
         )
 
-    if kelompok["tanpa_mpp_jauh"]:
-        wilayah = gabung_wilayah(kelompok["tanpa_mpp_jauh"])
+    if kelompok["tanpa_mpp"]:
         rekomendasi.append(
-            f"Wilayah {wilayah} berjarak jauh dan belum memiliki Mal Pelayanan Publik, sehingga pengarahan pelayanan "
-            "difokuskan pada pemanfaatan layanan pengiriman paspor melalui pos sebagai kanal utama pengambilan "
-            "paspor, serta pelaksanaan layanan jemput bola secara terbatas dan terjadwal untuk wilayah dengan "
-            "intensitas permohonan tinggi."
+            f"Wilayah {gabung_wilayah(kelompok['tanpa_mpp'])} belum memiliki MPP, "
+            f"sehingga pelayanan diarahkan pada pengiriman paspor melalui pos "
+            f"atau layanan jemput bola."
         )
+
     return rekomendasi
+
+
+def rekomendasi_individu(row, df_wilayah_ref):
+    alasan = []
+    layanan_dasar = None
+    penyesuaian_layanan = None
+
+    # ======================
+    # USIA (LAYANAN DASAR)
+    # ======================
+    if row['usia_tahun'] < 17:
+        layanan_dasar = "Pelayanan Berbasis Keluarga"
+        alasan.append("Pemohon berusia di bawah 17 tahun")
+
+    elif row['usia_tahun'] <= 45:
+        layanan_dasar = "Layanan Reguler Berbasis Digital"
+        alasan.append("Pemohon berada pada usia produktif")
+
+    elif row['usia_tahun'] <= 65:
+        layanan_dasar = "Layanan Reguler dengan Pendampingan Administrasi"
+        alasan.append("Pemohon usia dewasa akhir")
+
+    else:
+        layanan_dasar = "Layanan Prioritas Lansia"
+        alasan.append("Pemohon berusia lanjut")
+
+    # ======================
+    # JENIS KELAMIN (PENDEKATAN)
+    # ======================
+    if str(row['jenis_kelamin']).lower().startswith('p'):
+        alasan.append(
+            "Pendekatan pelayanan memperhatikan aspek kenyamanan dan keamanan bagi pemohon perempuan"
+        )
+
+    # ======================
+    # STATUS PENGAMBILAN
+    # ======================
+    if str(row['status']).lower() != "diambil":
+        alasan.append("Paspor belum diambil sehingga diperlukan tindak lanjut pelayanan")
+
+    # ======================
+    # WILAYAH & AKSES (PENYESUAIAN LAYANAN)
+    # ======================
+    ref = df_wilayah_ref[df_wilayah_ref['wilayah'] == row['tempat_lahir']]
+
+    if not ref.empty:
+        ada_mpp = ref.iloc[0]['ada_mpp']
+        jarak = ref.iloc[0]['jarak_km']
+
+        if jarak == 0:
+            penyesuaian_layanan = "Pelayanan Langsung di Kantor Imigrasi Cilacap"
+            alasan.append("Domisili berada di lokasi Kantor Imigrasi Cilacap")
+
+        elif ada_mpp and jarak <= 50:
+            penyesuaian_layanan = "Pelayanan melalui Mal Pelayanan Publik (MPP)"
+            alasan.append("Wilayah memiliki MPP dengan jarak dekat")
+
+        elif ada_mpp:
+            penyesuaian_layanan = (
+                "Pelayanan melalui MPP dan Pengiriman Paspor melalui Pos"
+            )
+            alasan.append("Wilayah memiliki MPP namun berjarak cukup jauh")
+
+        else:
+            penyesuaian_layanan = (
+                "Pengiriman Paspor melalui Pos atau Layanan Jemput Bola"
+            )
+            alasan.append("Wilayah belum memiliki MPP dan berjarak jauh")
+
+    layanan_utama = penyesuaian_layanan or layanan_dasar
+
+    return (
+        f"Layanan utama: {layanan_utama}. "
+        f"Pertimbangan: {', '.join(alasan)}."
+    )
+
 
    
 
@@ -582,124 +637,128 @@ from io import BytesIO
 def save_visuals_pdf(df_final, now, best_k):
     buffer = BytesIO()
 
+    # =========================
+    # VARIABEL RINGKASAN (WAJIB)
+    # =========================
+    jumlah_klaster = df_final['cluster'].nunique()
+    total_pemohon = len(df_final)
+    klaster_terbesar = df_final['cluster'].value_counts().idxmax()
+
     with PdfPages(buffer) as pdf:
 
         # =========================
-        # BOXPLOT USIA
+        # HALAMAN 1 – RINGKASAN & USIA
         # =========================
-        fig, ax = plt.subplots()
+        fig = plt.figure(figsize=(8.27, 11.69))
+        gs = fig.add_gridspec(3, 2, height_ratios=[0.7, 1.2, 1.2], hspace=0.5)
 
-        df_final.boxplot(
-            column='usia_tahun',
-            by='cluster',
-            ax=ax
+        # --- Ringkasan
+        ax0 = fig.add_subplot(gs[0, :])
+        ax0.axis('off')
+
+        ax0.text(
+            0.5, 0.80,
+            "RINGKASAN HASIL KLASTERISASI PEMOHON PASPOR",
+            ha='center',
+            fontsize=16,
+            fontweight='bold'
         )
 
-        ax.set_title("Boxplot Usia per Klaster")
-        ax.set_xlabel("Klaster")
-        ax.set_ylabel("Usia")
+        ax0.text(
+            0.1, 0.10,
+            f"Jumlah Klaster : {jumlah_klaster}\n"
+            f"Total Pemohon : {total_pemohon:,}\n"
+            f"Klaster Terbesar : Klaster {klaster_terbesar}",
+            fontsize=11,
+            linespacing=1.8
+        )
+
+        # --- Boxplot Usia
+        ax1 = fig.add_subplot(gs[1, 0])
+        df_final.boxplot(column='usia_tahun', by='cluster', ax=ax1, grid=False)
+        ax1.set_title("Distribusi Usia per Klaster")
+        ax1.set_xlabel("Klaster")
+        ax1.set_ylabel("Usia")
         plt.suptitle("")
 
-        pdf.savefig(fig)
-        plt.close(fig)
-
-        # =========================
-        # HISTOGRAM USIA
-        # =========================
-        fig, ax = plt.subplots()
-
-        for cluster_id in sorted(df_final['cluster'].unique()):
-            subset = df_final[df_final['cluster'] == cluster_id]
-            ax.hist(
-                subset['usia_tahun'],
-                bins=20,
-                alpha=0.6,
-                label=f'Klaster {cluster_id}'
+        # --- Histogram Usia
+        ax2 = fig.add_subplot(gs[1, 1])
+        for c in sorted(df_final['cluster'].unique()):
+            ax2.hist(
+                df_final[df_final['cluster'] == c]['usia_tahun'],
+                bins=20, alpha=0.6, label=f"Klaster {c}"
             )
-        ax.set_title("Histogram Distribusi Usia per Klaster")
-        ax.set_xlabel("Usia")
-        ax.set_ylabel("Frekuensi")
-        ax.legend()
+        ax2.set_title("Sebaran Usia Pemohon")
+        ax2.legend(frameon=False, fontsize=9)
+
+        # --- Scatter Usia
+        ax3 = fig.add_subplot(gs[2, :])
+        y_jitter = np.random.normal(0, 0.08, len(df_final))
+        ax3.scatter(
+            df_final['usia_tahun'],
+            y_jitter,
+            c=df_final['cluster'],
+            cmap='viridis',
+            alpha=0.6,
+            s=20
+        )
+        ax3.set_title("Scatter Usia Berdasarkan Klaster")
+        ax3.set_xlabel("Usia")
+        ax3.set_yticks([])
 
         pdf.savefig(fig)
         plt.close(fig)
 
         # =========================
-        # JENIS KELAMIN
+        # HALAMAN 2 – LAYANAN & WILAYAH
         # =========================
-        jk_cluster = (
+        fig = plt.figure(figsize=(8.27, 11.69))
+        gs = fig.add_gridspec(3, 2, hspace=0.5)
+
+        # --- Jenis Kelamin
+        ax1 = fig.add_subplot(gs[0, 0])
+        (
             df_final
             .groupby(['cluster', 'jenis_kelamin'])
             .size()
             .unstack(fill_value=0)
+            .plot(kind='bar', ax=ax1)
         )
+        ax1.set_title("Komposisi Jenis Kelamin")
+        ax1.legend(frameon=False, fontsize=9)
 
-        fig, ax = plt.subplots()
-        jk_cluster.plot(kind='bar', ax=ax)
-        ax.set_title("Distribusi Jenis Kelamin per Klaster")
-        ax.set_xlabel("Klaster")
-        ax.set_ylabel("Jumlah")
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
-
-        pdf.savefig(fig)
-        plt.close(fig)
-
-        # =========================
-        # STATUS PENGAMBILAN
-        # =========================
-        status_cluster = (
+        # --- Status Paspor
+        ax2 = fig.add_subplot(gs[0, 1])
+        (
             df_final
             .groupby(['cluster', 'status'])
             .size()
             .unstack(fill_value=0)
+            .plot(kind='bar', ax=ax2)
         )
+        ax2.set_title("Status Pengambilan Paspor")
+        ax2.legend(frameon=False, fontsize=9)
 
-        fig, ax = plt.subplots()
-        status_cluster.plot(kind='bar', ax=ax)
-        ax.set_title("Distribusi Status Pengambilan per Klaster")
-        ax.set_xlabel("Klaster")
-        ax.set_ylabel("Jumlah")
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
-
-        pdf.savefig(fig)
-        plt.close(fig)
-
-        # =========================
-        # TOP 5 TEMPAT LAHIR PER KLASTER
-        # =========================
-        top_n = 5
-
+        # --- TOP 5 WILAYAH ASAL PER KLASTER
+        row = 1
         for cluster_id in sorted(df_final['cluster'].unique()):
-            fig, ax = plt.subplots()
+            ax = fig.add_subplot(gs[row, cluster_id % 2])
 
-            subset = df_final[df_final['cluster'] == cluster_id]
-            top_tl = subset['tempat_lahir'].value_counts().head(top_n)
+            top5 = (
+                df_final[df_final['cluster'] == cluster_id]
+                ['tempat_lahir']
+                .value_counts()
+                .head(5)
+            )
 
-            top_tl.plot(kind='bar', ax=ax)
-            ax.set_title(f"Top {top_n} Tempat Lahir – Klaster {cluster_id}")
-            ax.set_xlabel("Tempat Lahir")
-            ax.set_ylabel("Jumlah")
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')
+            top5.plot(kind='bar', ax=ax)
+            ax.set_title(f"Top 5 Wilayah Asal – Klaster {cluster_id}")
+            ax.set_ylabel("Jumlah Pemohon")
+            ax.set_xlabel("Wilayah")
+            ax.tick_params(axis='x', rotation=30)
 
-            pdf.savefig(fig)
-            plt.close(fig)
-        # =========================
-        # SCATTER USIA (JITTER)
-        # =========================
-        fig, ax = plt.subplots()
-
-        y_jitter = np.random.normal(0, 0.05, size=len(df_final))
-
-        scatter = ax.scatter(
-            df_final['usia_tahun'],
-            y_jitter,
-            c=df_final['cluster'],
-            alpha=0.6
-        )
-        ax.set_title("Scatter Plot Usia Berdasarkan Klaster")
-        ax.set_xlabel("Usia")
-        ax.set_ylabel("Indeks Dummy (Jitter)")
-        ax.set_title("Scatter Plot Usia Berdasarkan Klaster")
+            if cluster_id % 2 == 1:
+                row += 1
 
         pdf.savefig(fig)
         plt.close(fig)
@@ -943,26 +1002,55 @@ if main == "Beranda":
 # -------------------------
 elif main == "Klasterisasi":
     st.title("Tahap Klasterisasi")
-    # stage = st.selectbox("Pilih Tahap:", ["Unggah Data", "Data Preprocessing", "Klasterisasi", "Visualisasi"])
 
-   # -------------------------
+
+    # -------------------------
     # UNGGAH DATA
     # -------------------------
+    import streamlit.components.v1 as components # type: ignore
     if stage == "Unggah Data":
         st.header("Unggah Dataset")
-        st.markdown("""
-        **Ketentuan Dataset:**
-        - Format file: **Excel (.xlsx)**
-        - Dataset harus memuat kolom berikut:
-          - Usia
-          - Jenis Kelamin
-          - Status Pengambilan
-          - Tempat Lahir
-        """)
 
+        components.html(
+            """
+            <div style="
+                background-color:#f8f9fa;
+                padding:18px 22px;
+                border-radius:10px;
+                border-left:6px solid #0A2540;
+                max-width:1200px;
+                margin-bottom:20px;
+                font-family: 'Inter', sans-serif;
+                font-size:15px;
+            ">
+                <h4 style="margin-top:0; margin-bottom:10px; color:#0A2540;">
+                    Ketentuan Dataset
+                </h4>
+                <ul style="margin:0; padding-left:20px; color:#444;">
+                    <li>Format file: <strong>Microsoft Excel (.xlsx)</strong></li>
+                    <li>Dataset wajib memuat kolom:
+                        <ul style="margin-top:6px;">
+                            <li>Usia</li>
+                            <li>Jenis Kelamin</li>
+                            <li>Status Pengambilan</li>
+                            <li>Tempat Lahir</li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+            """,
+            height=200
+        )
 
-
-        uploaded = st.file_uploader("Unggah file Excel (.xlsx)", type=["xlsx"])
+        st.markdown(
+            "<p style='margin-bottom:0; color:#0A2540; font-weight:600;'>Unggah Dataset Excel</p>",
+            unsafe_allow_html=True
+        )
+        uploaded = st.file_uploader(
+            "Unggah Dataset Pemohon Paspor (.xlsx)",
+            type=["xlsx"],
+            label_visibility="collapsed"
+        )
 
         # -------------------------
         # JIKA FILE BARU DIUPLOAD
@@ -1022,25 +1110,63 @@ elif main == "Klasterisasi":
             st.warning("Belum ada file yang diunggah.")
 
 
-    # -------------------------
-    # DATA PREPROCESSING
-    # -------------------------
+    # ==========================
+    # DATA PREPROCESSING 
+    # ==========================
     elif stage == "Data Preprocessing":
         st.header("Data Preprocessing")
 
-        if st.session_state['raw_df'] is None or st.session_state['mapping'] is None:
+        if st.session_state.get('raw_df') is None or st.session_state.get('mapping') is None:
             st.warning("Unggah dataset dulu di tahap 'Unggah Data' dan pastikan mapping lengkap.")
         else:
             df_raw = st.session_state['raw_df']
             mapping = st.session_state['mapping']
+
             if any(v is None for v in mapping.values()):
                 st.error("Mapping kolom belum lengkap. Kembali ke 'Unggah Data'.")
             else:
-                st.subheader("Ringkasan dataset awal")
-                st.write(f"Baris: {len(df_raw)} — Kolom: {len(df_raw.columns)}")
-                with st.expander("Lihat 10 baris awal"):
+                # ==========================
+                # Ringkasan dataset awal
+                # ==========================
+                st.markdown(f"""
+                <div style="
+                    background-color:#f8f9fa;
+                    padding:14px 16px;
+                    border-radius:10px;
+                    border-left:6px solid #0A2540;
+                    margin-bottom:12px;
+                    font-family:'Inter', sans-serif;
+                    font-size:15px;
+                    color:#444;">
+                    <p style="margin:0; font-weight:600; color:#0A2540;">Ringkasan Dataset Awal</p>
+                    <p style="margin:2px 0 0 0; font-size:15px; color:#666;">
+                        Baris: <strong>{len(df_raw)}</strong> — Kolom: <strong>{len(df_raw.columns)}</strong>
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+
+                with st.expander("Lihat 10 baris awal", expanded=False):
                     st.dataframe(df_raw.head(10))
 
+                # ==========================
+                # Jalankan Preprocessing
+                # ==========================
+                st.markdown("""
+                <style>
+                div.stButton > button:first-child {
+                    background-color: #0A2540;  /* biru tua */
+                    color: white;
+                    height: 40px;
+                    width: 220px;
+                    border-radius: 8px;
+                    font-weight: 600;
+                    font-size: 15px;
+                }
+                div.stButton > button:first-child:hover {
+                    background-color: #071c33;
+                }
+                </style>
+                """, unsafe_allow_html=True)
                 if st.button("Jalankan Preprocessing"):
                     with st.spinner("Menjalankan preprocessing..."):
                         df_clean, df_reduced, report = preprocess_full(df_raw, mapping, perform_reduction=True)
@@ -1048,196 +1174,184 @@ elif main == "Klasterisasi":
                         st.session_state['reduced_df'] = df_reduced
                         st.session_state['preproc_report'] = report
                         st.session_state['clean_df_original_values_for_merge'] = df_clean.copy()
-                    st.success("✅ Preprocessing selesai — lihat detail di bawah.")
+                    st.success("✅ Preprocessing selesai, lihat detail di bawah.")
 
-                if st.session_state['preproc_report'] is not None:
-                    rpt = st.session_state['preproc_report']
-                    st.subheader("1. Missing Values")
+                rpt = st.session_state.get('preproc_report', None)
+
+                if rpt:
+                    # ==========================
+                    # Missing Values
+                    # ==========================
+                    st.markdown(f"""
+                    <div style="
+                        background-color:#f8f9fa;
+                        padding:14px 16px;
+                        border-radius:10px;
+                        border-left:6px solid #0A2540;
+                        margin-bottom:12px;
+                        font-family:'Inter', sans-serif;
+                        font-size:15px;
+                        color:#444;">
+                        <p style="margin:0; font-weight:600; color:#0A2540;">Missing Values</p>
+                        <p style="margin:4px 0 0 0; font-size:15px; color:#666;">
+                            Jumlah data setelah pembersihan missing value: <strong>{rpt.get('rows_after_missing',0)}</strong>
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
 
                     st.write("Jumlah missing sebelum pembersihan (per kolom):")
-                    st.table(
-                        pd.DataFrame.from_dict(
-                            rpt.get('missing_before', {}),
-                            orient='index',
-                            columns=['Jumlah']
-                        )
-                        .reset_index()
-                        .rename(columns={'index': 'Kolom'})
-                    )
+                    st.table(pd.DataFrame.from_dict(rpt.get('missing_before', {}), orient='index', columns=['Jumlah']).reset_index().rename(columns={'index':'Kolom'}))
 
                     st.write("Jumlah missing setelah pembersihan (per kolom):")
-                    st.table(
-                        pd.DataFrame.from_dict(
-                            rpt.get('missing_after', {}),
-                            orient='index',
-                            columns=['Jumlah']
-                        )
-                        .reset_index()
-                        .rename(columns={'index': 'Kolom'})
-                    )
+                    st.table(pd.DataFrame.from_dict(rpt.get('missing_after', {}), orient='index', columns=['Jumlah']).reset_index().rename(columns={'index':'Kolom'}))
 
-                    st.write(
-                        "Jumlah data setelah pembersihan missing value:",
-                        rpt.get('rows_after_missing', 0)
-                    )
-
-                    st.markdown("---")
-
-
-
-
-                    st.subheader("2. Pembersihan Data Tidak Valid")
+                    # ==========================
+                    # Pembersihan Data Tidak Valid (per kolom, semua)
+                    # ==========================
+                    st.markdown(f"""
+                    <div style="
+                        background-color:#f8f9fa;
+                        padding:14px 16px;
+                        border-radius:10px;
+                        border-left:6px solid #0A2540;
+                        margin-bottom:12px;
+                        font-family:'Inter', sans-serif;
+                        font-size:15px;
+                        color:#444;">
+                        <p style="margin:0; font-weight:600; color:#0A2540;">Pembersihan Data Tidak Valid</p>
+                        <p style="margin:4px 0 0 0; font-size:15px; color:#666;">
+                            Jumlah data setelah pembersihan: <strong>{rpt.get('rows_after_invalid',0)}</strong>
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
 
                     invalids = rpt.get('invalid_details', {})
 
                     if isinstance(invalids, dict) and len(invalids) > 0:
                         for col, info in invalids.items():
+                            # Tentukan jumlah dan data invalid
                             if isinstance(info, dict):
                                 cnt = info.get('count', 0)
                                 ex = info.get('examples', [])
                             else:
                                 cnt = int(info)
                                 ex = []
-
-                            st.markdown(f"**Kolom `{col}`** — jumlah data tidak valid: {cnt}")
-
+                            
+                            st.markdown(f"**Kolom `{col}`** — jumlah data tidak valid: {cnt}", unsafe_allow_html=True)
+                            
+                            # Tampilkan semua baris invalid jika ada
                             if cnt > 0 and len(ex) > 0:
-                                st.write("Contoh data tidak valid:")
                                 st.dataframe(pd.DataFrame(ex))
                     else:
                         st.write("Tidak ditemukan data tidak valid.")
 
-                    st.write(
-                        "Jumlah data setelah pembersihan data tidak valid:",
-                        rpt.get('rows_after_invalid', 0)
-                    )
 
-                    st.markdown("---")
+                    # ==========================
+                    # Duplikasi Data dengan Preview
+                    # ==========================
+                    dupes_count = rpt.get('duplicates_found', 0)
+                    dropped_count = rpt.get('dropped_duplicates', 0)
+                    after_dup_rows = rpt.get('after_dup_rows', 0)
+                    st.markdown(f"""
+                    <div style="
+                        background-color:#f8f9fa;
+                        padding:14px 16px;
+                        border-radius:10px;
+                        border-left:6px solid #0A2540;
+                        margin-bottom:12px;
+                        font-family:'Inter', sans-serif;
+                        font-size:15px;
+                        color:#444;">
+                        <p style="margin:0; font-weight:600; color:#0A2540;">Duplikasi Data</p>
+                        <p style="margin:4px 0 0 0; font-size:15px; color:#666;">
+                            Duplikasi ditemukan: <strong>{dupes_count}</strong>, dibersihkan: <strong>{dropped_count}</strong>
+                        </p>
+                        <p style="margin:2px 0 0 0; font-size:15px; color:#666;">
+                            Jumlah data setelah pembersihan duplikasi: <strong>{after_dup_rows}</strong>
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # Jika ada duplikasi, tampilkan preview
+                    if dupes_count > 0 and rpt.get('duplicates_examples', None) is not None:
+                        st.markdown("<p style='font-weight:600; color:#0A2540;'>Contoh baris duplikasi:</p>", unsafe_allow_html=True)
+                        st.dataframe(pd.DataFrame(rpt['duplicates_examples']))
 
 
+                    # ==========================
+                    # Transformasi Data
+                    # ==========================
+                    st.markdown(f"""
+                    <div style="
+                        background-color:#f8f9fa;
+                        padding:14px 16px;
+                        border-radius:10px;
+                        border-left:6px solid #0A2540;
+                        margin-bottom:12px;
+                        font-family:'Inter', sans-serif;
+                        font-size:15px;
+                        color:#444;">
+                        <p style="margin:0; font-weight:600; color:#0A2540;">Transformasi Data</p>
+                        <p style="margin:4px 0 0 0; font-size:15px; color:#666;">
+                            Standarisasi numerik menggunakan Z-score.
+                        </p>
+                        <p style="margin:2px 0 0 0; font-size:15px; color:#666;">
+                            Transformasi kategorikal menggunakan Label Encoding.
+                        </p>
+                        <p style="margin:2px 0 0 0; font-size:15px; color:#666;">
+                            Jumlah data setelah transformasi: <strong>{rpt.get('after_transform_rows',0)}</strong>
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-
-                    st.subheader("3. Duplikasi")
-                    st.write(f"Duplikasi ditemukan: {rpt.get('duplicates_found',0)}, dibersihkan: {rpt.get('dropped_duplicates',0)}")
-                    st.write("Jumlah data setelah pembersihan duplikasi:", rpt.get('after_dup_rows',0))
-                    st.markdown("---")
-
-                    st.subheader("4. Transformasi")
-                    st.write("Standarisasi numerik menggunakan Z-score.")
-                    st.write("Transformasi kategorikal menggunakan Label Encoding.")
-                    st.write("Jumlah data setelah transformasi:", rpt.get('after_transform_rows',0))
-                    # show preview transform (only selected columns to avoid flooding UI)
+                    # Preview transformasi (utama)
                     if st.session_state.get('clean_df') is not None:
-                        preview_cols = ['usia','jenis_kelamin','tempat_lahir','status','usia_z' if 'usia_z' in st.session_state['clean_df'].columns else None]
-                        # show main transformed columns & label columns
-                        show_df = st.session_state['clean_df'].copy()
-                        to_show = []
-                        for c in ['usia','jenis_kelamin','tempat_lahir','status','jenis_kelamin_label','tempat_lahir_label','status_label']:
-                            if c in show_df.columns:
-                                to_show.append(c)
-                        if len(to_show) == 0:
-                            st.write("Tidak ada kolom transformasi yang dapat ditampilkan.")
-                        else:
-                           st.dataframe(show_df[to_show]) 
-                    st.markdown("---")
+                        df_clean = st.session_state['clean_df']
+                        cols_to_show = [c for c in ['usia','jenis_kelamin','tempat_lahir','status','jenis_kelamin_label','tempat_lahir_label','status_label'] if c in df_clean.columns]
+                        if cols_to_show:
+                            st.markdown("<p style='font-weight:600; color:#0A2540; font-size:15px; margin-bottom:4px;'>Preview Data Transformasi</p>", unsafe_allow_html=True)
+                            st.dataframe(df_clean[cols_to_show])
 
-                    st.subheader("5. Reduksi ")
-                    st.write(f"Jumlah baris representatif (unik): {rpt.get('reduced_rows',0)}")
-                    st.write("Jumlah data setelah preprocessing:", rpt.get('final_rows',0))
+                    # ==========================
+                    # Reduksi Data
+                    # ==========================
+                    st.markdown(f"""
+                    <div style="
+                        background-color:#f8f9fa;
+                        padding:14px 16px;
+                        border-radius:10px;
+                        border-left:6px solid #0A2540;
+                        margin-bottom:12px;
+                        font-family:'Inter', sans-serif;
+                        font-size:15px;
+                        color:#444;">
+                        <p style="margin:0; font-weight:600; color:#0A2540;">Reduksi Data</p>
+                        <p style="margin:4px 0 0 0; font-size:15px; color:#666;">
+                            Jumlah baris representatif (unik): <strong>{rpt.get('reduced_rows',0)}</strong>
+                        </p>
+                        <p style="margin:2px 0 0 0; font-size:15px; color:#666;">
+                            Jumlah data setelah preprocessing: <strong>{rpt.get('final_rows',0)}</strong>
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
                     if st.session_state.get('reduced_df') is not None:
-                        st.dataframe(st.session_state['reduced_df'][['usia','jenis_kelamin','tempat_lahir','status']])
-                    st.markdown("---")
+                        st.markdown("<p style='font-weight:600; color:#0A2540;'>Preview Data Reduksi</p>", unsafe_allow_html=True)
+                        st.dataframe(st.session_state['reduced_df'][['usia_tahun','jenis_kelamin','tempat_lahir','status']])
 
-                    # ============================
-                    # TABEL REFERENSI WILAYAH
-                    # ============================
-
+                    # ==========================
+                    # Simpan df_wilayah untuk logic saja
+                    # ==========================
                     wilayah_referensi = rpt.get("wilayah_dominan", [])
+                    if wilayah_referensi:
+                        df_wilayah = pd.DataFrame({
+                            "wilayah": wilayah_referensi,
+                            "jarak_km": [0,40,77,117,123,88,119,60,380,44,135,165,298,129,217,131,197,217,173,93],
+                            "ada_mpp": [True,True,True,False,True,True,False,True,False,True,False,False,True,False,False,False,False,False,False,False]
+                        })
+                        st.session_state["df_wilayah"] = df_wilayah  # disimpan untuk logic, tidak ditampilkan
 
-                    df_wilayah = pd.DataFrame({
-                        "wilayah": wilayah_referensi,
-                        "jarak_km": [
-                            0,     # Cilacap
-                            40,    # Banyumas
-                            77,    # Kebumen
-                            117,   # Brebes
-                            123,   # Tegal
-                            88,    # Banjarnegara
-                            119,   # Ciamis
-                            60,    # Purbalingga
-                            380,   # Jakarta
-                            44,    # Purwokerto
-                            135,   # Tasikmalaya
-                            165,   # Cirebon
-                            298,   # Bandung
-                            129,   # Purworejo
-                            217,   # Semarang
-                            131,   # Pemalang
-                            197,   # Klaten
-                            217,   # Indramayu
-                            173,   # Magelang
-                            93     # Banjar
-                        ],
-                        "ada_mpp": [
-                            True,     # Cilacap
-                            True,     # Banyumas
-                            True,     # Kebumen
-                           False,     # Brebes
-                            True,     # Tegal
-                            True,     # Banjarnegara
-                           False,     # Ciamis
-                            True,     # Purbalingga
-                           False ,    # Jakarta
-                            True,     # Purwokerto
-                            False,    # Tasikmalaya
-                            False,    # Cirebon
-                            True,     # Bandung
-                            False,    # Purworejo
-                            False,    # Semarang
-                            False,    # Pemalang
-                            False,    # Klaten
-                            False,    # Indramayu
-                            False,    # Magelang
-                            False     # Banjar
-                        ]
-                    })
-                    st.session_state["df_wilayah"] = df_wilayah
-
-
-
-
-                    # st.subheader("📍 Informasi Wilayah (Hasil Preprocessing)")
-                    # st.metric(
-                    #     label="Jumlah Wilayah Unik (Tempat Lahir)",
-                    #     value=rpt.get("jumlah_wilayah_unik", 0)
-                    # )
-                    # st.markdown("**Contoh Wilayah (10 pertama):**")
-                    # st.write(rpt.get("contoh_wilayah", []))
-                    # st.markdown("**Wilayah Dominan (Top 10):**")
-                    # df_wilayah_dom = pd.DataFrame({
-                    #     "Wilayah": rpt.get("wilayah_dominan", [])
-                    # })
-
-                    # st.dataframe(df_wilayah_dom, use_container_width=True)
-                    # import matplotlib.pyplot as plt
-                    # st.markdown("**Distribusi Wilayah Dominan**")
-
-                    # fig, ax = plt.subplots()
-                    # df_wilayah_dom["Wilayah"].value_counts().plot(kind="bar", ax=ax)
-                    # st.pyplot(fig)
-
-                    # col1, col2, col3 = st.columns(3)
-
-                    # with col1:
-                    #     st.metric("Jumlah Wilayah Unik", rpt["jumlah_wilayah_unik"])
-
-                    # with col2:
-                    #     st.metric("Wilayah Dominan", len(rpt["wilayah_dominan"]))
-
-                    # with col3:
-                    #     st.metric("Contoh Wilayah", len(rpt["contoh_wilayah"]))
-
-    
+        
     # ==============================
     # Cari k terbaik & jalankan klaster
     # ==============================
@@ -1263,11 +1377,28 @@ elif main == "Klasterisasi":
 
 
         # ======================================================
-        # PILIH RENTANG K UNTUK DBI
+        # PILIH RENTANG K UNTUK DBI (card-style)
         # ======================================================
-        st.subheader("Tentukan rentang k")
+        st.markdown("""
+        <div style="
+            background-color:#f8f9fa;
+            padding:14px 16px;
+            border-radius:10px;
+            border-left:6px solid #0A2540;
+            margin-bottom:12px;
+            font-family:'Inter', sans-serif;
+            font-size:15px;
+            color:#444;">
+            <p style="margin:0; font-weight:600; color:#0A2540;">Tentukan Rentang k</p>
+            <p style="margin:4px 0 0 0; font-size:15px; color:#666;">
+                Pilih rentang jumlah klaster (k) untuk menghitung DBI.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Slider Streamlit (tetap fungsional)
         kmin, kmax = st.slider(
-            "Pilih rentang jumlah klaster (k)",
+            "",
             min_value=2,
             max_value=12,
             value=(2, 6),
@@ -1277,7 +1408,23 @@ elif main == "Klasterisasi":
         # ======================================================
         # CARI K TERBAIK (DBI)
         # ======================================================
-        if st.button("Cari nilai k terbaik"):
+        st.markdown("""
+        <style>
+        div.stButton > button:first-child {
+            background-color: #0A2540;
+            color: white;
+            font-size: 15px;
+            font-weight: 600;
+            padding: 8px 20px;
+            border-radius: 8px;
+            border: none;
+        }
+        div.stButton > button:first-child:hover {
+            background-color: #081B33;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        if st.button("Cari nilai k terbaik", key="btn_cari_k"):
             dbi_scores = {}
             labels_for_k = {}
             kproto_models = {}
@@ -1312,12 +1459,30 @@ elif main == "Klasterisasi":
                 )
 
                 # Plot DBI
-                fig, ax = plt.subplots()
-                ax.plot(list(dbi_scores.keys()), list(dbi_scores.values()), marker='o')
-                ax.set_xlabel("k")
-                ax.set_ylabel("DBI")
-                ax.set_title("Davies–Bouldin Index vs k")
-                st.pyplot(fig)
+                import plotly.graph_objects as go # type: ignore
+                fig = go.Figure()
+
+                fig.add_trace(go.Scatter(
+                    x=list(dbi_scores.keys()),
+                    y=list(dbi_scores.values()),
+                    mode='lines+markers',
+                    line=dict(color='#0A2540', width=3),   # garis biru tua
+                    marker=dict(color='#0072B5', size=10), # marker biru terang
+                    hovertemplate='k=%{x}<br>DBI=%{y:.4f}<extra></extra>'
+                ))
+
+                fig.update_layout(
+                    title="Davies–Bouldin Index vs k",
+                    xaxis_title="k",
+                    yaxis_title="DBI",
+                    font=dict(family="Inter, sans-serif", size=15, color="#0A2540"),
+                    plot_bgcolor="#f8f9fa",
+                    paper_bgcolor="#f8f9fa",
+                    margin=dict(l=40, r=40, t=60, b=40)
+                )
+
+                st.plotly_chart(fig, use_container_width=True)
+
 
         # ======================================================
         # PILIH K UNTUK DIJALANKAN
@@ -1332,7 +1497,23 @@ elif main == "Klasterisasi":
         # ======================================================
         # JALANKAN K-PROTOTYPES
         # ======================================================
-        if st.button("Jalankan K-Prototypes pada data representatif dan tebarkan label ke data asli"):
+        st.markdown("""
+        <style>
+        div.stButton > button[key="btn_run_kproto"] {
+            background-color: #0072B5;
+            color: white;
+            font-size: 15px;
+            font-weight: 600;
+            padding: 8px 20px;
+            border-radius: 8px;
+            border: none;
+        }
+        div.stButton > button[key="btn_run_kproto"]:hover {
+            background-color: #005a8c;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        if st.button("Jalankan K-Prototypes", key="btn_run_kproto"):
             try:
                 kp, labels_rep, arr, cat_idx = run_kprototypes_on_array(
                     df_reduced,
@@ -1376,57 +1557,225 @@ elif main == "Klasterisasi":
                 st.error(f"Gagal menjalankan klasterisasi: {e}")
 
         # ======================================================
-        # TAMPILKAN INTERPRETASI 
+        # TAMPILKAN INTERPRETASI + DATA PEMOHON
         # ======================================================
         if (
             st.session_state.get('klaster_sudah_dijalankan') is True
             and isinstance(st.session_state.get('cluster_results'), dict)
         ):
 
-            st.subheader("📊 Ringkasan Hasil Klasterisasi")
+            st.subheader("Interpretasi Klaster Pemohon Paspor dan Rekomendasi Pelayanan Individual")
 
             df_final = st.session_state['cluster_results']['df_final']
 
-            for c in sorted(df_final['cluster'].unique()):
+            # ======================================================
+            # REKOMENDASI INDIVIDU (DITURUNKAN DARI KLASTER)
+            # ======================================================
+            df_tampil = df_final.copy()
+            df_tampil['Rekomendasi Pelayanan'] = df_tampil.apply(
+                lambda row: rekomendasi_individu(row, st.session_state['df_wilayah']),
+                axis=1
+            )
+
+            # ======================================================
+            # PENCARIAN PEMOHON INDIVIDUAL
+            # ======================================================
+            st.markdown("### Cek Klaster Pemohon")
+
+            with st.form("form_search"):
+                col1, col2 = st.columns([6, 1], vertical_alignment="bottom")
+
+                with col1:
+                    keyword = st.text_input(
+                        "Masukkan nama / nomor permohonan / nomor paspor",
+                        placeholder="Contoh: Andi / 123456 / A1234567"
+                    )
+                
+                with col2:
+                    search = st.form_submit_button("Search", use_container_width=True)
+
+
+
+            if keyword:
+                hasil_cari = df_tampil[
+                    df_tampil['nama'].str.contains(keyword, case=False, na=False) |
+                    df_tampil['nopermohonan'].astype(str).str.contains(keyword, na=False) |
+                    df_tampil['nopaspor'].astype(str).str.contains(keyword, na=False)
+                ]
+
+                if hasil_cari.empty:
+                    st.warning("Data pemohon tidak ditemukan.")
+                else:
+                    jumlah = len(hasil_cari)
+                    klaster_unik = hasil_cari['cluster'].unique()
+
+                    if len(klaster_unik) == 1:
+                        st.success(
+                            f"Ditemukan {jumlah} data pemohon pada klaster {klaster_unik[0]}."
+                        )
+                    else:
+                        st.success(
+                            f"Ditemukan {jumlah} data pemohon pada klaster {', '.join(map(str, klaster_unik))}."
+                        )
+
+                    st.dataframe(
+                        hasil_cari[
+                            [
+                            'id',
+                            'nopermohonan',
+                            'nama',
+                            'tempat_lahir',
+                            'tanggallahir',
+                            'jenis_kelamin',
+                            'notelepon',
+                            'nopaspor',
+                            'kodebilling',
+                            'tanggalsimpan',
+                            'tanggalambil',
+                            'smsgateway',
+                            'koderak',
+                            'status',
+                            'usia_tahun',
+                            'cluster',
+                            'Rekomendasi Pelayanan'
+                            ]
+                        ],
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                    st.markdown("<hr>", unsafe_allow_html=True)
+
+            for c in sorted(df_tampil['cluster'].unique()):
                 if c == -1:
                     continue
 
-                sub = df_final[df_final['cluster'] == c]
+                df_klaster = df_tampil[df_tampil['cluster'] == c]
 
-                usia_min = sub['usia_tahun'].min()
-                usia_max = sub['usia_tahun'].max()
-                usia_mean = sub['usia_tahun'].mean()
+                # =========================
+                # INTERPRETASI KLASTER
+                # =========================
+                usia_min = df_klaster['usia_tahun'].min()
+                usia_max = df_klaster['usia_tahun'].max()
+                usia_mean = df_klaster['usia_tahun'].mean()
 
-                # Jenis kelamin
-                jk_prop = sub['jenis_kelamin'].value_counts(normalize=True) * 100
-                jk_dominan = jk_prop.idxmax()
-                jk_label = "Laki-laki" if jk_dominan.lower().startswith("l") else "Perempuan"
+                jk_prop = df_klaster['jenis_kelamin'].value_counts(normalize=True) * 100
+                jk_dom = jk_prop.idxmax()
 
-                # Status pengambilan
-                status_prop = sub['status'].value_counts(normalize=True) * 100
-                status_dominan = status_prop.idxmax()
+                status_prop = df_klaster['status'].value_counts(normalize=True) * 100
+                status_dom = status_prop.idxmax()
 
-                # Top 5 tempat lahir
-                top_tempat = sub['tempat_lahir'].value_counts().head(5)
+                top_tempat = df_klaster['tempat_lahir'].value_counts().head(5)
                 tempat_teks = ", ".join(top_tempat.index)
 
                 st.markdown(f"### Klaster {c}")
-                st.markdown(f"- **Jumlah pemohon** : {len(sub)}")
-                st.markdown(f"- **Rentang usia** : {usia_min} – {usia_max} tahun")
-                st.markdown(f"- **Rata-rata usia** : {usia_mean:.2f} tahun")
-                st.markdown(f"- **Jenis kelamin dominan** : {jk_label} ({jk_prop[jk_dominan]:.2f}%)")
-                st.markdown(f"- **Status pengambilan dominan** : {status_dominan} ({status_prop[status_dominan]:.2f}%)")
-                st.markdown(f"- **5 tempat lahir terbanyak** : {tempat_teks}")
-            
-            # ================================
-            # REKOMENDASI PELAYANAN
-            # ================================
-            st.subheader("Rekomendasi Strategi Pelayanan Keimigrasian Berdasarkan Hasil Klasterisasi Pemohon Paspor")
+
+                st.markdown(f"""
+                <div style="
+                    background-color:#f8f9fa;
+                    padding:16px 20px;
+                    border-radius:10px;
+                    border-left:6px solid #0A2540;
+                    margin-bottom:12px;
+                ">
+                    <p style="margin:0; color:#444;">
+                        <strong>Jumlah pemohon:</strong> {len(df_klaster)} <br>
+                        <strong>Rentang usia:</strong> {usia_min}–{usia_max} tahun <br>
+                        <strong>Rata-rata usia:</strong> {usia_mean:.2f} tahun <br>
+                        <strong>Jenis kelamin dominan:</strong> {jk_dom} ({jk_prop[jk_dom]:.2f}%) <br>
+                        <strong>Status pengambilan dominan:</strong> {status_dom} ({status_prop[status_dom]:.2f}%) <br>
+                        <strong>Wilayah asal terbanyak:</strong> {tempat_teks}
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # =========================
+                # DATA PEMOHON + REKOMENDASI
+                # =========================
+                with st.expander("Lihat data pemohon"):
+                    st.dataframe(
+                        df_klaster[
+                            [
+                            'id',
+                            'nopermohonan',
+                            'nama',
+                            'tempat_lahir',
+                            'tanggallahir',
+                            'jenis_kelamin',
+                            'notelepon',
+                            'nopaspor',
+                            'kodebilling',
+                            'tanggalsimpan',
+                            'tanggalambil',
+                            'smsgateway',
+                            'koderak',
+                            'status',
+                            'usia_tahun',
+                            'cluster',
+                            'Rekomendasi Pelayanan'
+                            ]
+                        ],
+                        use_container_width=True,
+                        height=380
+                    )
+
+                    # =========================
+                    # DOWNLOAD EXCEL PER KLASTER
+                    # =========================
+                    excel_buffer = io.BytesIO()
+
+                    df_klaster[
+                        [
+                            'id',
+                            'nopermohonan',
+                            'nama',
+                            'tempat_lahir',
+                            'tanggallahir',
+                            'jenis_kelamin',
+                            'notelepon',
+                            'nopaspor',
+                            'kodebilling',
+                            'tanggalsimpan',
+                            'tanggalambil',
+                            'smsgateway',
+                            'koderak',
+                            'status',
+                            'usia_tahun',
+                            'cluster',
+                            'Rekomendasi Pelayanan'
+                        ]
+                    ].to_excel(
+                        excel_buffer,
+                        index=False,
+                        engine='openpyxl'
+                    )
+
+                    excel_buffer.seek(0)
+
+                    st.download_button(
+                        label="📥 Unduh Data Klaster (Excel)",
+                        data=excel_buffer,
+                        file_name=f"data_pemohon_klaster_{c}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+
+                    st.markdown("<hr>", unsafe_allow_html=True)
+
+            st.subheader("Rekomendasi Strategi Pelayanan Keimigrasian Berbasis Hasil Klasterisasi Pemohon Paspor")
+
+            st.markdown("""
+            <p style="text-align: justify; color:#555; max-width:900px;">
+           Rekomendasi strategi pelayanan keimigrasian pada tingkat klaster yang disusun berdasarkan hasil klasterisasi data pemohon paspor. Rekomendasi bersifat analitis dan digunakan sebagai bahan pertimbangan dalam pengambilan keputusan manajerial, tanpa menggantikan kewenangan institusional yang berlaku.
+            </p>
+            <hr>
+            """, unsafe_allow_html=True)
 
             for k in sorted(df_final['cluster'].unique()):
+                if k == -1:
+                    continue
+
                 data_k = df_final[df_final['cluster'] == k]
 
-                # ambil TOP 5 wilayah dominan per klaster
                 wilayah_dominan = (
                     data_k['tempat_lahir']
                     .value_counts()
@@ -1434,219 +1783,337 @@ elif main == "Klasterisasi":
                     .index
                     .tolist()
                 )
+
                 rekomendasi = buat_rekomendasi_pelayanan(
                     data_k=data_k,
                     wilayah_dominan=wilayah_dominan,
                     df_wilayah_ref=st.session_state["df_wilayah"]
                 )
 
-
-                st.markdown(f"### Klaster {k}")
-                st.markdown("**Rekomendasi Pelayanan:**")
-
-                st.markdown(
-                    """
-                    <div style="text-align: justify;">
-                        <ul style="padding-left: 20px;">
-                            {}
-                        </ul>
-                    </div>
-                    """.format("".join(f"<li style='margin-bottom:8px;'>{r}</li>" for r in rekomendasi)),
-                    unsafe_allow_html=True
-                )
-
-            st.markdown(
-                    """
-                    <hr>
-                    <p style="font-size:13px; color:#666; text-align: justify;">
-                    <strong>Catatan:</strong> Rekomendasi pelayanan ini disusun berdasarkan hasil analisis dan klasterisasi
-                    data pemohon paspor menggunakan algoritma K-Prototypes. Implementasi rekomendasi dilakukan dengan
-                    mempertimbangkan kebijakan yang berlaku, kondisi operasional, serta kewenangan pengambilan keputusan
-                    oleh pimpinan unit kerja terkait.
-                    </p>
-                    """,
-                    unsafe_allow_html=True
-            )
-
-
-
-            
-            # ==============================
-            # Download Excel
-            # ==============================
-            if st.session_state.get('merged') is not None and st.session_state.get('labels_rep') is not None and st.session_state.get('reduced_df') is not None:
-                filename, buffer = save_excel_with_clusters(
-                    original_df=st.session_state.get('clean_df'),
-                    df_representative=st.session_state.get('reduced_df'),
-                    labels=st.session_state['labels_rep'],
-                    now=st.session_state['now'],
-                    best_k=st.session_state.get('best_k') or st.session_state.get('sel_k')
-                )
-
-                st.markdown("""
-                <style>
-                div[data-testid="stDownloadButton"] > button {
-                    background-color: #0A2540;
-                    color: white;
-                    border-radius: 6px;
-                    border: none;
-                    padding: 0.5em 1em;
-                    font-weight: 600;
-                }
-
-                div[data-testid="stDownloadButton"] > button:hover {
-                    background-color: #081E33;
-                    color: white;
-                }
-                </style>
-                """, unsafe_allow_html=True)
-
-                st.download_button(
-                    label="📥 Unduh Excel Hasil Klaster",
-                    data=buffer,
-                    file_name=filename,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+                with st.expander(f"Rekomendasi Strategi – Klaster {k}"):
+                    st.markdown(
+                        """
+                        <div style="text-align: justify;">
+                            <ul style="padding-left: 20px;">
+                                {}
+                            </ul>
+                        </div>
+                        """.format(
+                            "".join(
+                                f"<li style='margin-bottom:8px;'>{r}</li>"
+                                for r in rekomendasi
+                            )
+                        ),
+                        unsafe_allow_html=True
+                    )
 
     # -------------------------
     # VISUALISASI
     # -------------------------
     
     elif stage == "Visualisasi":
-        st.header("Visualisasi Hasil Klasterisasi")
+
+        # =========================
+        # HEADER HALAMAN (WEB FEEL)
+        # =========================
+        st.markdown("""
+        <h2 style="text-align:center;">Visualisasi Hasil Klaster Pemohon Paspor</h2>
+        <hr style="margin:30px 0;">
+        """, unsafe_allow_html=True)
 
         if st.session_state.get('df_final') is None:
-            st.warning("Jalankan proses klasterisasi terlebih dahulu.")
+            st.warning("Data klaster belum tersedia. Silakan jalankan proses klasterisasi terlebih dahulu.")
             st.stop()
 
         df_final = st.session_state['df_final']
 
-        # =========================
-        # BOXPLOT USIA
-        # =========================
-        st.subheader("Boxplot Usia per Klaster")
-        fig, ax = plt.subplots()
-        df_final.boxplot(
-            column='usia_tahun',
-            by='cluster',
-            ax=ax
-        )
-        ax.set_title("Boxplot Usia per Klaster")
-        ax.set_xlabel("Klaster")
-        ax.set_ylabel("Usia")
-        plt.suptitle("")  # hapus judul default pandas
-
-        st.pyplot(fig)
-        plt.close(fig)
-
-
-        # =========================
-        # HISTOGRAM USIA
-        # =========================
-        st.subheader("Histogram Distribusi Usia per Klaster")
-        fig = plt.figure()
-
-        for cluster_id in sorted(df_final['cluster'].unique()):
-            subset = df_final[df_final['cluster'] == cluster_id]
-            plt.hist(
-                subset['usia_tahun'],
-                bins=20,
-                alpha=0.6,
-                label=f'Klaster {cluster_id}'
+        with st.container():
+            # JUDUL CARD
+            st.markdown(
+                "<p style='margin:0; font-weight:600; font-size:28px; color:#0A2540;'>"
+                "Ringkasan Hasil Klasterisasi"
+                "</p>",
+                unsafe_allow_html=True
             )
 
-        plt.xlabel('Usia')
-        plt.ylabel('Frekuensi')
-        plt.legend()
-        st.pyplot(fig)
-        plt.close(fig)
+            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+
+            # ISI CARD (SEMUA METRIC MASUK)
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.metric("Jumlah Klaster", df_final['cluster'].nunique())
+
+            with col2:
+                st.metric("Total Pemohon", f"{len(df_final):,}")
+
+            with col3:
+                st.metric(
+                    "Klaster Terbesar",
+                    f"Klaster {df_final['cluster'].value_counts().idxmax()}"
+                )
+
+            # TUTUP DIV CARD
+            st.markdown("</div>", unsafe_allow_html=True)
+
+
+
+        # =====================================================
+        # BAGIAN 1 — KARAKTERISTIK USIA
+        # =====================================================
+        st.subheader("Karakteristik Usia Pemohon")
+
+        col_left, col_right = st.columns(2)
 
         # =========================
-        # JENIS KELAMIN
+        # BOX PLOT USIA PER KLASTER
         # =========================
-        st.subheader("Distribusi Jenis Kelamin per Klaster")
+        with col_left:
+            fig, ax = plt.subplots(figsize=(6, 4))
 
-        jk_cluster = (
-            df_final
-            .groupby(['cluster', 'jenis_kelamin'])
-            .size()
-            .unstack(fill_value=0)
-        )
+            df_final.boxplot(
+                column='usia_tahun',
+                by='cluster',
+                ax=ax,
+                grid=False,
+                boxprops=dict(color='#0A2540', linewidth=1.5),
+                medianprops=dict(color='#E5533D', linewidth=2),
+                whiskerprops=dict(color='#0A2540'),
+                capprops=dict(color='#0A2540')
+            )
 
-        fig, ax = plt.subplots()
-        jk_cluster.plot(kind='bar', ax=ax)
-        ax.set_xlabel('Klaster')
-        ax.set_ylabel('Jumlah')
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
+            ax.set_title("Distribusi Usia per Klaster", fontsize=13, fontweight='bold')
+            ax.set_xlabel("Klaster", fontsize=11)
+            ax.set_ylabel("Usia (Tahun)", fontsize=11)
 
-        st.pyplot(fig)
-        plt.close(fig)
+            ax.tick_params(axis='both', labelsize=10)
+            ax.yaxis.grid(True, linestyle='--', alpha=0.4)
 
-
-        # =========================
-        # STATUS PENGAMBILAN
-        # =========================
-        st.subheader("Distribusi Status Pengambilan per Klaster")
-
-        status_cluster = (
-            df_final
-            .groupby(['cluster', 'status'])
-            .size()
-            .unstack(fill_value=0)
-        )
-
-        fig, ax = plt.subplots()
-        status_cluster.plot(kind='bar', ax=ax)
-        ax.set_xlabel('Klaster')
-        ax.set_ylabel('Jumlah')
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
-
-        st.pyplot(fig)
-        plt.close(fig)
-
-
-        # =========================
-        # TOP TEMPAT LAHIR
-        # =========================
-        st.subheader("Top 5 Tempat Lahir per Klaster")
-
-        top_n = 5
-        for cluster_id in sorted(df_final['cluster'].unique()):
-            fig = plt.figure()
-
-            subset = df_final[df_final['cluster'] == cluster_id]
-            top_tl = subset['tempat_lahir'].value_counts().head(top_n)
-
-            top_tl.plot(kind='bar')
-            plt.title(f'Top {top_n} Tempat Lahir – Klaster {cluster_id}')
-            plt.xlabel('Tempat Lahir')
-            plt.ylabel('Jumlah')
-            plt.xticks(rotation=45, ha='right')
-
+            plt.suptitle("")
+            plt.tight_layout()
             st.pyplot(fig)
             plt.close(fig)
 
         # =========================
-        # SCATTER USIA (JITTER)
+        # HISTOGRAM SEBARAN USIA
         # =========================
-        st.subheader("Scatter Plot Usia Berdasarkan Klaster")
+        with col_right:
+            fig, ax = plt.subplots(figsize=(6, 4))
 
-        fig = plt.figure()
-        y_jitter = np.random.normal(0, 0.05, size=len(df_final))
+            for cluster_id in sorted(df_final['cluster'].unique()):
+                subset = df_final[df_final['cluster'] == cluster_id]
+                ax.hist(
+                    subset['usia_tahun'],
+                    bins=20,
+                    alpha=0.6,
+                    label=f'Klaster {cluster_id}'
+                )
 
-        plt.scatter(
-            df_final['usia_tahun'],
-            y_jitter,
-            c=df_final['cluster'],
-            alpha=0.6
+            ax.set_title("Pola Sebaran Usia Pemohon", fontsize=13, fontweight='bold')
+            ax.set_xlabel("Usia (Tahun)", fontsize=11)
+            ax.set_ylabel("Frekuensi", fontsize=11)
+
+            ax.tick_params(axis='both', labelsize=10)
+            ax.grid(axis='y', linestyle='--', alpha=0.4)
+
+            ax.legend(
+                frameon=False,
+                fontsize=10,
+                loc='upper right'
+            )
+
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close(fig)
+
+
+        # =========================
+        # SEBARAN INDIVIDU (PENDUKUNG)
+        # =========================
+        col_pad_left, col_center, col_pad_right = st.columns([1, 2, 1])
+
+        with col_center:
+            fig, ax = plt.subplots(figsize=(6, 4))
+
+            # jitter untuk indeks individu (dummy)
+            y_jitter = np.random.normal(0, 0.08, size=len(df_final))
+
+            ax.scatter(
+                df_final['usia_tahun'],
+                y_jitter,
+                c=df_final['cluster'],
+                cmap='viridis',
+                alpha=0.6,
+                s=30
+            )
+
+            ax.set_title(
+                "Scatter Plot Usia Berdasarkan Klaster",
+                fontsize=13,
+                fontweight='bold'
+            )
+
+            ax.set_xlabel("Usia", fontsize=11)
+
+            ax.set_ylabel(
+                "Indeks Dummy (Jitter)",
+                fontsize=11
+            )
+
+            # y dummy → tidak perlu angka
+            ax.set_yticks([])
+
+            ax.grid(axis='x', linestyle='--', alpha=0.3)
+
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close(fig)
+
+
+
+        st.markdown("<hr style='margin-top:20px; margin-bottom:20px;'>", unsafe_allow_html=True)
+        
+
+        # =====================================================
+        # BAGIAN 2 — KOMPOSISI PEMOHON
+        # =====================================================
+        st.subheader("Komposisi Pemohon per Klaster")
+
+        col_left, col_right = st.columns(2)
+
+        # =========================
+        # KOMPOSISI JENIS KELAMIN
+        # =========================
+        with col_left:
+            jk_cluster = (
+                df_final
+                .groupby(['cluster', 'jenis_kelamin'])
+                .size()
+                .unstack(fill_value=0)
+            )
+
+            fig, ax = plt.subplots(figsize=(6, 4))
+
+            jk_cluster.plot(
+                kind='bar',
+                ax=ax,
+                width=0.75
+            )
+
+            ax.set_title("Komposisi Jenis Kelamin", fontsize=13, fontweight='bold')
+            ax.set_xlabel("Klaster", fontsize=11)
+            ax.set_ylabel("Jumlah Pemohon", fontsize=11)
+
+            ax.tick_params(axis='both', labelsize=10)
+            ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
+
+            ax.grid(axis='y', linestyle='--', alpha=0.4)
+            ax.legend(
+                title="Jenis Kelamin",
+                frameon=False,
+                fontsize=10,
+                title_fontsize=10
+            )
+
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close(fig)
+
+        # =========================
+        # STATUS PENGAMBILAN PASPOR
+        # =========================
+        with col_right:
+            status_cluster = (
+                df_final
+                .groupby(['cluster', 'status'])
+                .size()
+                .unstack(fill_value=0)
+            )
+
+            fig, ax = plt.subplots(figsize=(6, 4))
+
+            status_cluster.plot(
+                kind='bar',
+                ax=ax,
+                width=0.75
+            )
+
+            ax.set_title("Status Pengambilan Paspor", fontsize=13, fontweight='bold')
+            ax.set_xlabel("Klaster", fontsize=11)
+            ax.set_ylabel("Jumlah Pemohon", fontsize=11)
+
+            ax.tick_params(axis='both', labelsize=10)
+            ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
+
+            ax.grid(axis='y', linestyle='--', alpha=0.4)
+            ax.legend(
+                title="Status",
+                frameon=False,
+                fontsize=10,
+                title_fontsize=10
+            )
+
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close(fig)
+
+        st.markdown(
+            "<hr style='margin-top:20px; margin-bottom:20px;'>",
+            unsafe_allow_html=True
         )
 
-        plt.xlabel('Usia')
-        plt.ylabel('Indeks Dummy (Jitter)')
-        plt.title('Scatter Plot Usia Berdasarkan Klaster')
+        # =====================================================
+        # BAGIAN 3 — SEBARAN WILAYAH
+        # =====================================================
+        st.subheader("Sebaran Wilayah Asal Pemohon")
 
-        st.pyplot(fig)
-        plt.close(fig)
+        top_n = 5
+
+        for cluster_id in sorted(df_final['cluster'].unique()):
+
+            st.markdown(
+                f"<p style='margin:12px 0 6px 0; font-weight:600; color:#0A2540;'>"
+                f"Klaster {cluster_id} — {top_n} Wilayah Asal Terbanyak"
+                f"</p>",
+                unsafe_allow_html=True
+            )
+
+            subset = df_final[df_final['cluster'] == cluster_id]
+            top_tl = subset['tempat_lahir'].value_counts().head(top_n)
+
+            fig, ax = plt.subplots(figsize=(7, 4))
+
+            top_tl.plot(
+                kind='bar',
+                ax=ax,
+                width=0.7
+            )
+
+            ax.set_title(
+                f"Distribusi Wilayah Asal Pemohon (Klaster {cluster_id})",
+                fontsize=13,
+                fontweight='bold'
+            )
+            ax.set_xlabel("Wilayah", fontsize=11)
+            ax.set_ylabel("Jumlah Pemohon", fontsize=11)
+
+            ax.tick_params(axis='both', labelsize=10)
+            ax.set_xticklabels(
+                ax.get_xticklabels(),
+                rotation=30,
+                ha='right'
+            )
+
+            ax.grid(axis='y', linestyle='--', alpha=0.4)
+
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close(fig)
+
+        st.markdown(
+            "<hr style='margin-top:20px; margin-bottom:20px;'>",
+            unsafe_allow_html=True
+        )
 
         # =========================
         # DOWNLOAD PDF
@@ -1679,20 +2146,3 @@ elif main == "Klasterisasi":
             file_name=f"visualisasi_k{st.session_state.get('best_k','manual')}_{st.session_state['now']}.pdf",
             mime="application/pdf"
         )
-
-
-# -------------------------
-# MUAT ULANG PROSES
-# -------------------------
-# elif main == "Muat Ulang Proses":
-#     if st.button("Muat Ulang Proses"):
-#         keys = [
-#             'raw_df','mapping','clean_df','reduced_df','preproc_report','df_final',
-#             'kproto_models','dbi_scores','labels_for_k','best_k',
-#             'merged','labels_rep','cluster_results','klaster_sudah_dijalankan'
-#         ]
-#         for k in keys:
-#             if k in st.session_state:
-#                 del st.session_state[k]
-#         st.session_state['now'] = datetime.now().strftime("%Y%m%d_%H%M%S")
-#         st.success("Sudah direset. Muat ulang halaman atau pilih menu 'Beranda' untuk memulai lagi.")
