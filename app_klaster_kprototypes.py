@@ -1,3 +1,6 @@
+# -------------------------
+# Library
+# -------------------------
 import streamlit as st # type: ignore
 import pandas as pd
 import numpy as np
@@ -51,14 +54,17 @@ def humanize_mapping(mapping):
             lines.append(f"Kolom untuk *{dst}* TIDAK DITEMUKAN")
     return lines
 
+# -------------------------
+# Fungsi Preprocessing
+# -------------------------
 def preprocess_full(df, mapping, perform_reduction=True):
     report = {}
     df_work = df.copy()
     report['original_rows'] = int(len(df_work))
 
-    # ============================
-    # AMBIL KOLOM DARI MAPPING
-    # ============================
+    # -------------------------
+    # ambil kolom dari mapping
+    # -------------------------
     usia_col = mapping['usia']
     jk_col   = mapping['jenis_kelamin']
     tp_col   = mapping['tempat_lahir']
@@ -66,54 +72,37 @@ def preprocess_full(df, mapping, perform_reduction=True):
 
     cols_needed = [usia_col, jk_col, tp_col, st_col]
 
-    # ============================
-    # MISSING VALUES
-    # ============================
-
-    # Ringkas missing sebelum
+    # -------------------------
+    # missing value
+    # -------------------------
     missing_before = df_work[cols_needed].isna().sum()
     report['missing_before'] = missing_before.to_dict()
-
-    # Pastikan usia numerik
     df_work[usia_col] = pd.to_numeric(df_work[usia_col], errors='coerce')
-
-    # Simpan jumlah baris sebelum missing
     rows_before_missing = len(df_work)
     report['rows_before_missing'] = rows_before_missing
-
-    # Hapus semua baris yang memiliki missing di kolom penting
     df_work = df_work.dropna(subset=cols_needed)
-
-    # Simpan hasil setelah missing
     report['rows_after_missing'] = len(df_work)
     report['dropped_missing_total'] = rows_before_missing - len(df_work)
-
-    # Ringkas missing setelah
     missing_after = df_work[cols_needed].isna().sum()
     report['missing_after'] = missing_after.to_dict()
 
-
-
-    # ============================
-    # DATA TIDAK VALID
-    # ============================
+    # -------------------------
+    # data tidak valid
+    # -------------------------
 
     invalid = {}
-
-    # Jumlah data sebelum pembersihan invalid
     rows_before_invalid = len(df_work)
     report['rows_before_invalid'] = rows_before_invalid
 
     # ----------------------------
-    # Validasi USIA (0–120)
+    # validasi usia
     # ----------------------------
     invalid_usia = df_work[(df_work[usia_col] < 0) | (df_work[usia_col] > 120)]
     invalid['usia'] = len(invalid_usia)
-
     df_work = df_work[(df_work[usia_col] >= 0) & (df_work[usia_col] <= 120)]
 
     # ----------------------------
-    # Normalisasi & validasi JENIS KELAMIN
+    # normalisasi & validasi jenis kelamin
     # ----------------------------
     def norm_jk(x):
         s = str(x).lower().strip()
@@ -124,14 +113,12 @@ def preprocess_full(df, mapping, perform_reduction=True):
         return 'Unknown'
 
     df_work[jk_col] = df_work[jk_col].apply(norm_jk)
-
     invalid_jk = df_work[df_work[jk_col] == 'Unknown']
     invalid['jenis_kelamin'] = len(invalid_jk)
-
     df_work = df_work[df_work[jk_col].isin(['L', 'P'])]
 
     # ----------------------------
-    # Validasi TEMPAT LAHIR
+    # validasi tempat lahir
     # ----------------------------
     df_work[tp_col] = df_work[tp_col].astype(str).str.strip()
 
@@ -149,13 +136,13 @@ def preprocess_full(df, mapping, perform_reduction=True):
 
     invalid['tempat_lahir'] = {
         'count': int(len(invalid_tp_all)),
-        'examples': invalid_tp_all.to_dict(orient='records')  # Semua baris
+        'examples': invalid_tp_all.to_dict(orient='records')
     }
 
     df_work = df_work[~df_work.index.isin(invalid_tp_all.index)]
 
     # ----------------------------
-    # Validasi STATUS 
+    # validasi status
     # ----------------------------
     df_work[st_col] = df_work[st_col].astype(str).str.strip()
     invalid_st = df_work[df_work[st_col].str.len() == 0]
@@ -164,16 +151,16 @@ def preprocess_full(df, mapping, perform_reduction=True):
     df_work = df_work[df_work[st_col].str.len() > 0]
 
     # ----------------------------
-    # Ringkasan hasil invalid
+    # ringkasan hasil invalid
     # ----------------------------
     report['invalid_details'] = invalid
     report['rows_after_invalid'] = len(df_work)
     report['dropped_invalid_total'] = rows_before_invalid - len(df_work)
 
 
-    # ============================
-    # DUPLIKASI ASLI
-    # ============================
+    # ----------------------------
+    # duplikasi
+    # ----------------------------
     dup_count = df_work.duplicated().sum()
     report['duplicates_found'] = int(dup_count)
 
@@ -182,16 +169,15 @@ def preprocess_full(df, mapping, perform_reduction=True):
     report['dropped_duplicates'] = int(before_dup - len(df_work))
     report['after_dup_rows'] = int(len(df_work))
 
-    # ============================
-    # TRANSFORMASI
-    # ============================
+    # ----------------------------
+    # transformasi
+    # ----------------------------
 
     df_work[usia_col + "_orig"] = df_work[usia_col].astype(float).copy()
-    # Z-score usia
+
     scaler = StandardScaler()
     df_work[usia_col] = scaler.fit_transform(df_work[[usia_col]])
 
-    # Label Encoding
     le_jk = LabelEncoder()
     le_tp = LabelEncoder()
     le_st = LabelEncoder()
@@ -202,18 +188,18 @@ def preprocess_full(df, mapping, perform_reduction=True):
 
     report['after_transform_rows'] = len(df_work)
 
-    # ============================
-    # REDUKSI
-    # ============================
+    # ----------------------------
+    # reduksi
+    # ----------------------------
     rep_cols = [usia_col, jk_col, tp_col, st_col]
     df_reduced = df_work.drop_duplicates(subset=rep_cols).reset_index(drop=True)
 
     report['reduced_rows'] = len(df_reduced)
     report['final_rows'] = len(df_work)
 
-    # ============================
-    # STANDARDISASI NAMA KOLOM
-    # ============================
+    # ----------------------------
+    # standarisasi nama kkolom
+    # ----------------------------
     rename_map = {
         usia_col: 'usia',
         usia_col + "_orig": 'usia_tahun', 
@@ -237,9 +223,9 @@ def preprocess_full(df, mapping, perform_reduction=True):
         st_col + "_label": "status_label"
     })
 
-    # ============================
-    # AMBIL WILAYAH UNIK (REFERENSI)
-    # ============================
+    # ----------------------------
+    # ambil wilayah unik
+    # ----------------------------
     wilayah_unik = (
         df_work["tempat_lahir"]
         .dropna()
@@ -250,7 +236,6 @@ def preprocess_full(df, mapping, perform_reduction=True):
     report["jumlah_wilayah_unik"] = len(wilayah_unik)
     report["contoh_wilayah"] = wilayah_unik[:10].tolist()
 
-    # (opsional) wilayah dominan
     wilayah_dominan = (
         df_work["tempat_lahir"]
         .value_counts()
@@ -278,24 +263,9 @@ def run_kprototypes_on_array(df_for_cluster, k, random_state=42):
     labels = kp.fit_predict(arr, categorical=cat_idx)
     return kp, labels, arr, cat_idx
 
-def compute_dbi_mixed(df_for_cluster, labels, gamma=1):
-    num_cols = ['usia']
-    cat_cols = ['jenis_kelamin_label', 'tempat_lahir_label', 'status_label']
-    arr_num = df_for_cluster[num_cols].to_numpy(dtype=float)
-    arr_cat = df_for_cluster[cat_cols].to_numpy(dtype=int)
-    unique_labels = np.unique(labels)
-    centroids_num = np.array([arr_num[labels==l].mean(axis=0) for l in unique_labels])
-    centroids_cat = np.array([np.array([np.bincount(arr_cat[labels==l, idx]).argmax() 
-                                        for idx in range(arr_cat.shape[1])])
-                            for l in unique_labels], dtype=int)
-    S = compute_dispersion(arr_num, arr_cat, labels, centroids_num, centroids_cat, gamma)
-    M = compute_Mij_with_sqrt(centroids_num, centroids_cat, gamma)
-    _, _, DBI = compute_Rij_and_DBI(S, M)
-    return DBI
-
-# ==============================
-# DBI campuran (numerik + kategorik)
-# ==============================
+# --------------------------
+# dispersi klaster
+# --------------------------
 def compute_dispersion(arr_num, arr_cat, labels, centroids_num, centroids_cat, gamma=1):
     import numpy as np
     k = centroids_num.shape[0]
@@ -312,6 +282,9 @@ def compute_dispersion(arr_num, arr_cat, labels, centroids_num, centroids_cat, g
         S.append(np.mean(dist_list))
     return np.array(S)
 
+# --------------------------
+# jarak antar centroid
+# --------------------------
 def compute_Mij_with_sqrt(centroids_num, centroids_cat, gamma=1):
     import numpy as np
     k = centroids_num.shape[0]
@@ -324,6 +297,9 @@ def compute_Mij_with_sqrt(centroids_num, centroids_cat, gamma=1):
                 M[i, j] = np.sqrt(num_dist + gamma * cat_dist)
     return M
 
+# --------------------------
+# menghitung rasio DBI
+# --------------------------
 def compute_Rij_and_DBI(S, M):
     import numpy as np
     k = len(S)
@@ -364,14 +340,13 @@ def make_merge_key(df):
     )
 
 # -------------------------
-# Save outputs helpers
+# save output excel
 # -------------------------
 def save_excel_with_clusters(original_df, df_representative, labels, now, best_k):
     import io
     rep = df_representative.copy()
     rep['cluster'] = labels.astype(int)
 
-    # merge key unik
     rep['__merge_key'] = rep['usia'].astype(str) + '_' + \
                          rep['jenis_kelamin'].astype(str) + '_' + \
                          rep['tempat_lahir'].astype(str) + '_' + \
@@ -387,24 +362,24 @@ def save_excel_with_clusters(original_df, df_representative, labels, now, best_k
     merged['cluster'] = merged['cluster'].fillna(-1).astype(int)
     merged.drop(columns='__merge_key', inplace=True)
 
-    # hapus kolom label yang tidak ingin ditampilkan
     cols_to_drop = ['usia', 'jenis_kelamin_label', 'tempat_lahir_label', 'status_label']
     merged = merged.drop(columns=[c for c in cols_to_drop if c in merged.columns])
 
-    # simpan ke buffer
     buffer = io.BytesIO()
     filename = f"hasil_klaster_k{best_k}_{now}.xlsx"
     merged.to_excel(buffer, index=False, engine='openpyxl')
     buffer.seek(0)
     return filename, buffer
 
-
+# -------------------------
+# rekomendasi pelayanan klaster
+# -------------------------
 def buat_rekomendasi_pelayanan(data_k, wilayah_dominan, df_wilayah_ref):
     rekomendasi = []
 
-    # =====================================================
-    # 1. PROFIL USIA KLASTER
-    # =====================================================
+    # -------------------------
+    # struktur usia
+    # -------------------------
     prop_anak = data_k['usia_tahun'].between(0, 16).mean()
     prop_produktif = data_k['usia_tahun'].between(17, 45).mean()
     prop_dewasa_akhir = data_k['usia_tahun'].between(46, 65).mean()
@@ -416,9 +391,9 @@ def buat_rekomendasi_pelayanan(data_k, wilayah_dominan, df_wilayah_ref):
         .get("diambil", 0)
     )
 
-    # =====================================================
-    # 2. ARAH LAYANAN UTAMA KLASTER (KOMBINASI)
-    # =====================================================
+    # -------------------------
+    # arah layanan
+    # -------------------------
     if prop_lansia >= 0.20:
         arah_layanan = (
             "Layanan Prioritas Lansia dengan pendampingan administratif "
@@ -441,11 +416,9 @@ def buat_rekomendasi_pelayanan(data_k, wilayah_dominan, df_wilayah_ref):
         f"pola penyelesaian layanan, serta kebutuhan akses layanan."
     )
 
-    # =====================================================
-    # 3. REKOMENDASI BERDASARKAN KELOMPOK USIA
-    # =====================================================
-
-    # Anak & Remaja Awal
+    # -------------------------
+    # rekomendasi berdasarkan usia
+    # -------------------------
     if prop_anak > 0:
         rekomendasi.append(
             "Keberadaan pemohon anak dan remaja awal menunjukkan perlunya "
@@ -453,7 +426,6 @@ def buat_rekomendasi_pelayanan(data_k, wilayah_dominan, df_wilayah_ref):
             "alur administrasi serta penguatan verifikasi dokumen orang tua atau wali."
         )
 
-    # Usia Produktif (17–45)
     if prop_produktif >= 0.30:
         rekomendasi.append(
             "Dominasi pemohon usia produktif mengindikasikan kebutuhan terhadap "
@@ -461,7 +433,6 @@ def buat_rekomendasi_pelayanan(data_k, wilayah_dominan, df_wilayah_ref):
             "terutama pada tahap pendaftaran dan pengaturan jadwal layanan."
         )
 
-    # Dewasa Akhir (46–65)
     if prop_dewasa_akhir >= 0.25:
         rekomendasi.append(
             "Proporsi pemohon usia dewasa akhir memerlukan penyampaian informasi "
@@ -469,7 +440,6 @@ def buat_rekomendasi_pelayanan(data_k, wilayah_dominan, df_wilayah_ref):
             "dan tahapan administrasi pelayanan paspor."
         )
 
-    # Lansia (>65)
     if prop_lansia > 0:
         rekomendasi.append(
             "Keberadaan pemohon lansia menuntut penyediaan layanan prioritas "
@@ -478,9 +448,9 @@ def buat_rekomendasi_pelayanan(data_k, wilayah_dominan, df_wilayah_ref):
             "mengurangi kebutuhan kunjungan ulang."
         )
 
-    # =====================================================
-    # 4. JENIS KELAMIN DOMINAN
-    # =====================================================
+    # -------------------------
+    # jenis kelamin dominan
+    # -------------------------
     jk_dominan = data_k['jenis_kelamin'].mode()[0]
     jk_prop = (data_k['jenis_kelamin'] == jk_dominan).mean()
 
@@ -490,18 +460,18 @@ def buat_rekomendasi_pelayanan(data_k, wilayah_dominan, df_wilayah_ref):
             "penyediaan lingkungan layanan yang aman, nyaman, dan ramah perempuan."
         )
 
-    # =====================================================
-    # 5. POLA PENYELESAIAN LAYANAN
-    # =====================================================
+    # -------------------------
+    # pola penyelesaian layanan
+    # -------------------------
     if prop_diambil < 0.90:
         rekomendasi.append(
             "Masih terdapat pemohon yang belum menyelesaikan proses pengambilan paspor, "
             "sehingga diperlukan penguatan mekanisme pengingat serta pendampingan layanan."
         )
 
-    # =====================================================
-    # 6. AKSES LAYANAN BERDASARKAN WILAYAH DOMINAN
-    # =====================================================
+    # -------------------------
+    # layanan berdasarkan wilayah
+    # -------------------------
     from collections import defaultdict
     kelompok = defaultdict(list)
 
@@ -554,15 +524,17 @@ def buat_rekomendasi_pelayanan(data_k, wilayah_dominan, df_wilayah_ref):
 
     return rekomendasi
 
-
+# -------------------------
+# rekomendasi pelayanan individu
+# -------------------------
 def rekomendasi_individu(row, df_wilayah_ref):
     alasan = []
     layanan_dasar = None
     penyesuaian_layanan = None
 
-    # ======================
-    # USIA (LAYANAN DASAR)
-    # ======================
+    # -------------------------
+    # usia
+    # -------------------------
     if row['usia_tahun'] < 17:
         layanan_dasar = "Pelayanan Berbasis Keluarga"
         alasan.append("Pemohon berusia di bawah 17 tahun")
@@ -579,23 +551,23 @@ def rekomendasi_individu(row, df_wilayah_ref):
         layanan_dasar = "Layanan Prioritas Lansia"
         alasan.append("Pemohon berusia lanjut")
 
-    # ======================
-    # JENIS KELAMIN (PENDEKATAN)
-    # ======================
+    # -------------------------
+    # jenis kelamin
+    # -------------------------
     if str(row['jenis_kelamin']).lower().startswith('p'):
         alasan.append(
             "Pendekatan pelayanan memperhatikan aspek kenyamanan dan keamanan bagi pemohon perempuan"
         )
 
-    # ======================
-    # STATUS PENGAMBILAN
-    # ======================
+    # -------------------------
+    # status pengambilan
+    # -------------------------
     if str(row['status']).lower() != "diambil":
         alasan.append("Paspor belum diambil sehingga diperlukan tindak lanjut pelayanan")
 
-    # ======================
-    # WILAYAH & AKSES (PENYESUAIAN LAYANAN)
-    # ======================
+    # -------------------------
+    # wilayah
+    # -------------------------
     ref = df_wilayah_ref[df_wilayah_ref['wilayah'] == row['tempat_lahir']]
 
     if not ref.empty:
@@ -629,26 +601,27 @@ def rekomendasi_individu(row, df_wilayah_ref):
         f"Pertimbangan: {', '.join(alasan)}."
     )
 
-
    
-
+# -------------------------
+# save output pdf
+# -------------------------
 from io import BytesIO
 
 def save_visuals_pdf(df_final, now, best_k):
     buffer = BytesIO()
 
-    # =========================
-    # VARIABEL RINGKASAN (WAJIB)
-    # =========================
+    # -------------------------
+    # ringkasan
+    # -------------------------
     jumlah_klaster = df_final['cluster'].nunique()
     total_pemohon = len(df_final)
     klaster_terbesar = df_final['cluster'].value_counts().idxmax()
 
     with PdfPages(buffer) as pdf:
 
-        # =========================
-        # HALAMAN 1 – RINGKASAN & USIA
-        # =========================
+        # -------------------------
+        # halaman 1
+        # -------------------------
         fig = plt.figure(figsize=(8.27, 11.69))
         gs = fig.add_gridspec(3, 2, height_ratios=[0.7, 1.2, 1.2], hspace=0.5)
 
@@ -673,7 +646,7 @@ def save_visuals_pdf(df_final, now, best_k):
             linespacing=1.8
         )
 
-        # --- Boxplot Usia
+        # boxplot usia
         ax1 = fig.add_subplot(gs[1, 0])
         df_final.boxplot(column='usia_tahun', by='cluster', ax=ax1, grid=False)
         ax1.set_title("Distribusi Usia per Klaster")
@@ -681,7 +654,7 @@ def save_visuals_pdf(df_final, now, best_k):
         ax1.set_ylabel("Usia")
         plt.suptitle("")
 
-        # --- Histogram Usia
+        # histogram usia
         ax2 = fig.add_subplot(gs[1, 1])
         for c in sorted(df_final['cluster'].unique()):
             ax2.hist(
@@ -691,7 +664,7 @@ def save_visuals_pdf(df_final, now, best_k):
         ax2.set_title("Sebaran Usia Pemohon")
         ax2.legend(frameon=False, fontsize=9)
 
-        # --- Scatter Usia
+        # scatter usia
         ax3 = fig.add_subplot(gs[2, :])
         y_jitter = np.random.normal(0, 0.08, len(df_final))
         ax3.scatter(
@@ -709,13 +682,13 @@ def save_visuals_pdf(df_final, now, best_k):
         pdf.savefig(fig)
         plt.close(fig)
 
-        # =========================
-        # HALAMAN 2 – LAYANAN & WILAYAH
-        # =========================
+        # -------------------------
+        # halaman 2
+        # -------------------------
         fig = plt.figure(figsize=(8.27, 11.69))
         gs = fig.add_gridspec(3, 2, hspace=0.5)
 
-        # --- Jenis Kelamin
+        # jenis kelamin
         ax1 = fig.add_subplot(gs[0, 0])
         (
             df_final
@@ -727,7 +700,7 @@ def save_visuals_pdf(df_final, now, best_k):
         ax1.set_title("Komposisi Jenis Kelamin")
         ax1.legend(frameon=False, fontsize=9)
 
-        # --- Status Paspor
+        # status paspor
         ax2 = fig.add_subplot(gs[0, 1])
         (
             df_final
@@ -739,7 +712,7 @@ def save_visuals_pdf(df_final, now, best_k):
         ax2.set_title("Status Pengambilan Paspor")
         ax2.legend(frameon=False, fontsize=9)
 
-        # --- TOP 5 WILAYAH ASAL PER KLASTER
+        # top 5 wilayah
         row = 1
         for cluster_id in sorted(df_final['cluster'].unique()):
             ax = fig.add_subplot(gs[row, cluster_id % 2])
@@ -768,7 +741,7 @@ def save_visuals_pdf(df_final, now, best_k):
     return buffer.getvalue()
 
 # -------------------------
-# Session state init (keys used)
+# session state init
 # -------------------------
 for key, default in [
     ('raw_df', None), ('mapping', None), ('clean_df', None), ('reduced_df', None),
@@ -779,7 +752,7 @@ for key, default in [
         st.session_state[key] = default
 
 # -------------------------
-# Sidebar main menu
+# sidebar main menu
 # -------------------------
 import base64
 
@@ -805,7 +778,6 @@ with st.sidebar:
         border-color: rgba(255,255,255,0.4);
     }
 
-    /* TOMBOL RESET */
     section[data-testid="stSidebar"] div[data-testid="stButton"] > button {
         background-color: transparent;
         color: white;
@@ -837,9 +809,9 @@ with st.sidebar:
         """,
         unsafe_allow_html=True
     )
-    # ======================================================
-    # DIALOG KONFIRMASI RESET
-    # ======================================================
+    # -------------------------
+    # dialog konfirmasi reset
+    # -------------------------
     @st.dialog("Konfirmasi Muat Ulang Proses")
     def dialog_reset():
         st.warning(
@@ -847,7 +819,6 @@ with st.sidebar:
             "akan dihapus. Apakah anda yakin untuk muat ulang proses?"
         )
 
-        # Trik pusatkan tombol
         col_left, col_center, col_right = st.columns([1, 2, 1])
 
         with col_center:
@@ -878,24 +849,17 @@ with st.sidebar:
                 st.success("Proses berhasil direset. Silakan mulai dari awal.")
                 st.rerun()
 
-    # ======================================================
-    # SIDEBAR
-    # ======================================================
+    # -------------------------
+    # sidebar 2
+    # -------------------------
     with st.sidebar:
 
-        # -------------------------
-        # MENU UTAMA
-        # -------------------------
         main = st.radio(
             "Menu Utama:",
             ["Beranda", "Klasterisasi"],
             key="menu_utama",
             index=0
         )
-
-        # -------------------------
-        # TAHAP KLASTERISASI
-        # -------------------------
         stage = None
         if main == "Klasterisasi":
             col_space, col_radio = st.columns([1, 10])
@@ -911,18 +875,11 @@ with st.sidebar:
                     ],
                     key="tahap_klasterisasi"
                 )
-
-
-        # -------------------------
-        # TOMBOL RESET (PEMICU POPUP)
-        # -------------------------
         if st.button("🔄 Muat Ulang Proses"):
             dialog_reset()
 
-
-
 # -------------------------
-# BERANDA
+# beranda
 # -------------------------
 if main == "Beranda":
 
@@ -994,18 +951,15 @@ if main == "Beranda":
             unsafe_allow_html=True
         )
 
-
-
-
 # -------------------------
-# KLASTERISASI 
+# tahapan klasterisasi 
 # -------------------------
 elif main == "Klasterisasi":
     st.title("Tahap Klasterisasi")
 
 
     # -------------------------
-    # UNGGAH DATA
+    # unggah data
     # -------------------------
     import streamlit.components.v1 as components # type: ignore
     if stage == "Unggah Data":
@@ -1052,9 +1006,6 @@ elif main == "Klasterisasi":
             label_visibility="collapsed"
         )
 
-        # -------------------------
-        # JIKA FILE BARU DIUPLOAD
-        # -------------------------
         if uploaded is not None:
             try:
                 df = pd.read_excel(uploaded)
@@ -1080,39 +1031,29 @@ elif main == "Klasterisasi":
             except Exception as e:
                 st.error(f"Gagal membaca file: {e}")
 
-        # ---------------------------------------------------------
-        # JIKA TIDAK ADA FILE BARU TAPI SESSION STATE MASIH ADA
-        # ---------------------------------------------------------
         elif st.session_state['raw_df'] is not None:
             st.info("Menggunakan data yang sudah diunggah sebelumnya.")
 
             df = st.session_state['raw_df']
             mapping = st.session_state['mapping']
 
-            # INFO dataset
             st.write(f" Dataset berisi {len(df)} baris data dan {len(df.columns)} kolom")
 
-            # INFO mapping kolom
             if mapping is not None:
                 st.success("✅ Semua kolom penting berhasil terdeteksi otomatis.")
                 for line in humanize_mapping(mapping):
                     st.write("- " + line)
 
-            # PREVIEW data
             st.markdown("### Preview data (dari sesi sebelumnya)")
             st.dataframe(df.head(8))
 
-
-        # ---------------------------------------------------------
-        # BELUM ADA FILE SAMA SEKALI
-        # ---------------------------------------------------------
         else:
             st.warning("Belum ada file yang diunggah.")
 
 
-    # ==========================
-    # DATA PREPROCESSING 
-    # ==========================
+    # ---------------------------
+    # data preprocessing
+    # ---------------------------
     elif stage == "Data Preprocessing":
         st.header("Data Preprocessing")
 
@@ -1125,9 +1066,9 @@ elif main == "Klasterisasi":
             if any(v is None for v in mapping.values()):
                 st.error("Mapping kolom belum lengkap. Kembali ke 'Unggah Data'.")
             else:
-                # ==========================
-                # Ringkasan dataset awal
-                # ==========================
+                # ---------------------------
+                # ringkasan dataset awal
+                # ---------------------------
                 st.markdown(f"""
                 <div style="
                     background-color:#f8f9fa;
@@ -1148,9 +1089,9 @@ elif main == "Klasterisasi":
                 with st.expander("Lihat 10 baris awal", expanded=False):
                     st.dataframe(df_raw.head(10))
 
-                # ==========================
-                # Jalankan Preprocessing
-                # ==========================
+                # ---------------------------
+                # jalankan preprocessing
+                # ---------------------------
                 st.markdown("""
                 <style>
                 div.stButton > button:first-child {
@@ -1179,9 +1120,9 @@ elif main == "Klasterisasi":
                 rpt = st.session_state.get('preproc_report', None)
 
                 if rpt:
-                    # ==========================
-                    # Missing Values
-                    # ==========================
+                    # ---------------------------
+                    # missing value
+                    # ---------------------------
                     st.markdown(f"""
                     <div style="
                         background-color:#f8f9fa;
@@ -1205,9 +1146,9 @@ elif main == "Klasterisasi":
                     st.write("Jumlah missing setelah pembersihan (per kolom):")
                     st.table(pd.DataFrame.from_dict(rpt.get('missing_after', {}), orient='index', columns=['Jumlah']).reset_index().rename(columns={'index':'Kolom'}))
 
-                    # ==========================
-                    # Pembersihan Data Tidak Valid (per kolom, semua)
-                    # ==========================
+                    # ---------------------------
+                    # data tidak valid
+                    # ---------------------------
                     st.markdown(f"""
                     <div style="
                         background-color:#f8f9fa;
@@ -1229,7 +1170,6 @@ elif main == "Klasterisasi":
 
                     if isinstance(invalids, dict) and len(invalids) > 0:
                         for col, info in invalids.items():
-                            # Tentukan jumlah dan data invalid
                             if isinstance(info, dict):
                                 cnt = info.get('count', 0)
                                 ex = info.get('examples', [])
@@ -1239,16 +1179,15 @@ elif main == "Klasterisasi":
                             
                             st.markdown(f"**Kolom `{col}`** — jumlah data tidak valid: {cnt}", unsafe_allow_html=True)
                             
-                            # Tampilkan semua baris invalid jika ada
                             if cnt > 0 and len(ex) > 0:
                                 st.dataframe(pd.DataFrame(ex))
                     else:
                         st.write("Tidak ditemukan data tidak valid.")
 
 
-                    # ==========================
-                    # Duplikasi Data dengan Preview
-                    # ==========================
+                    # ---------------------------
+                    # duplikasi data
+                    # ---------------------------
                     dupes_count = rpt.get('duplicates_found', 0)
                     dropped_count = rpt.get('dropped_duplicates', 0)
                     after_dup_rows = rpt.get('after_dup_rows', 0)
@@ -1272,15 +1211,14 @@ elif main == "Klasterisasi":
                     </div>
                     """, unsafe_allow_html=True)
 
-                    # Jika ada duplikasi, tampilkan preview
                     if dupes_count > 0 and rpt.get('duplicates_examples', None) is not None:
                         st.markdown("<p style='font-weight:600; color:#0A2540;'>Contoh baris duplikasi:</p>", unsafe_allow_html=True)
                         st.dataframe(pd.DataFrame(rpt['duplicates_examples']))
 
 
-                    # ==========================
-                    # Transformasi Data
-                    # ==========================
+                    # ---------------------------
+                    # data transformasi
+                    # ---------------------------
                     st.markdown(f"""
                     <div style="
                         background-color:#f8f9fa;
@@ -1304,7 +1242,6 @@ elif main == "Klasterisasi":
                     </div>
                     """, unsafe_allow_html=True)
 
-                    # Preview transformasi (utama)
                     if st.session_state.get('clean_df') is not None:
                         df_clean = st.session_state['clean_df']
                         cols_to_show = [c for c in ['usia','jenis_kelamin','tempat_lahir','status','jenis_kelamin_label','tempat_lahir_label','status_label'] if c in df_clean.columns]
@@ -1312,9 +1249,9 @@ elif main == "Klasterisasi":
                             st.markdown("<p style='font-weight:600; color:#0A2540; font-size:15px; margin-bottom:4px;'>Preview Data Transformasi</p>", unsafe_allow_html=True)
                             st.dataframe(df_clean[cols_to_show])
 
-                    # ==========================
-                    # Reduksi Data
-                    # ==========================
+                    # ---------------------------
+                    # data reduksi
+                    # ---------------------------
                     st.markdown(f"""
                     <div style="
                         background-color:#f8f9fa;
@@ -1339,9 +1276,9 @@ elif main == "Klasterisasi":
                         st.markdown("<p style='font-weight:600; color:#0A2540;'>Preview Data Reduksi</p>", unsafe_allow_html=True)
                         st.dataframe(st.session_state['reduced_df'][['usia_tahun','jenis_kelamin','tempat_lahir','status']])
 
-                    # ==========================
-                    # Simpan df_wilayah untuk logic saja
-                    # ==========================
+                    # ---------------------------
+                    # wilayah
+                    # ---------------------------
                     wilayah_referensi = rpt.get("wilayah_dominan", [])
                     if wilayah_referensi:
                         df_wilayah = pd.DataFrame({
@@ -1349,12 +1286,12 @@ elif main == "Klasterisasi":
                             "jarak_km": [0,40,77,117,123,88,119,60,380,44,135,165,298,129,217,131,197,217,173,93],
                             "ada_mpp": [True,True,True,False,True,True,False,True,False,True,False,False,True,False,False,False,False,False,False,False]
                         })
-                        st.session_state["df_wilayah"] = df_wilayah  # disimpan untuk logic, tidak ditampilkan
+                        st.session_state["df_wilayah"] = df_wilayah 
 
         
-    # ==============================
-    # Cari k terbaik & jalankan klaster
-    # ==============================
+    # ---------------------------
+    # klasterisasi
+    # ---------------------------
     
     elif stage == "Klasterisasi":
         st.header("Proses Klasterisasi")
@@ -1366,19 +1303,15 @@ elif main == "Klasterisasi":
             st.warning("Lakukan preprocessing terlebih dahulu.")
             st.stop()
 
-        # ======================================================
-        # Inisialisasi sel_k 
-        # ======================================================
         if 'sel_k' not in st.session_state:
             if 'best_k' in st.session_state:
                 st.session_state['sel_k'] = st.session_state['best_k']
             else:
                 st.session_state['sel_k'] = 3
 
-
-        # ======================================================
-        # PILIH RENTANG K UNTUK DBI (card-style)
-        # ======================================================
+        # ---------------------------
+        # pilih rentang k
+        # ---------------------------
         st.markdown("""
         <div style="
             background-color:#f8f9fa;
@@ -1396,18 +1329,17 @@ elif main == "Klasterisasi":
         </div>
         """, unsafe_allow_html=True)
 
-        # Slider Streamlit (tetap fungsional)
         kmin, kmax = st.slider(
             "",
             min_value=2,
-            max_value=12,
+            max_value=10,
             value=(2, 6),
             step=1
         )
 
-        # ======================================================
-        # CARI K TERBAIK (DBI)
-        # ======================================================
+        # ---------------------------
+        # cari k
+        # ---------------------------
         st.markdown("""
         <style>
         div.stButton > button:first-child {
@@ -1446,19 +1378,17 @@ elif main == "Klasterisasi":
             if dbi_scores:
                 best_k = min(dbi_scores, key=dbi_scores.get)
 
-                # SIMPAN & SINKRONKAN KE WIDGET
                 st.session_state['dbi_scores'] = dbi_scores
                 st.session_state['labels_for_k'] = labels_for_k
                 st.session_state['kproto_models'] = kproto_models
                 st.session_state['best_k'] = best_k
-                st.session_state['sel_k'] = best_k   # ← INI YANG PENTING
+                st.session_state['sel_k'] = best_k  
 
                 st.success(
                     f"DBI terbaik diperoleh pada k = {best_k} "
                     f"(DBI = {dbi_scores[best_k]:.4f})"
                 )
 
-                # Plot DBI
                 import plotly.graph_objects as go # type: ignore
                 fig = go.Figure()
 
@@ -1466,8 +1396,8 @@ elif main == "Klasterisasi":
                     x=list(dbi_scores.keys()),
                     y=list(dbi_scores.values()),
                     mode='lines+markers',
-                    line=dict(color='#0A2540', width=3),   # garis biru tua
-                    marker=dict(color='#0072B5', size=10), # marker biru terang
+                    line=dict(color='#0A2540', width=3),  
+                    marker=dict(color='#0072B5', size=10), 
                     hovertemplate='k=%{x}<br>DBI=%{y:.4f}<extra></extra>'
                 ))
 
@@ -1484,9 +1414,9 @@ elif main == "Klasterisasi":
                 st.plotly_chart(fig, use_container_width=True)
 
 
-        # ======================================================
-        # PILIH K UNTUK DIJALANKAN
-        # ======================================================
+        # ---------------------------
+        # pilih k
+        # ---------------------------
         sel_k = st.number_input(
             "Pilih k untuk dijalankan",
             min_value=2,
@@ -1494,9 +1424,9 @@ elif main == "Klasterisasi":
             key="sel_k"
         )
 
-        # ======================================================
-        # JALANKAN K-PROTOTYPES
-        # ======================================================
+        # ---------------------------
+        # jalankan k-prototypes
+        # ---------------------------
         st.markdown("""
         <style>
         div.stButton > button[key="btn_run_kproto"] {
@@ -1520,12 +1450,10 @@ elif main == "Klasterisasi":
                     int(st.session_state['sel_k'])
                 )
 
-                # Label ke data representatif
                 df_reduced_labeled = df_reduced.copy()
                 df_reduced_labeled['cluster'] = labels_rep.astype(int)
                 df_reduced_labeled['__merge_key'] = make_merge_key(df_reduced_labeled)
 
-                # Tebarkan ke data asli
                 df_clean_copy = df_clean.copy()
                 df_clean_copy['__merge_key'] = make_merge_key(df_clean_copy)
 
@@ -1537,11 +1465,6 @@ elif main == "Klasterisasi":
                 merged['cluster'] = merged['cluster'].fillna(-1).astype(int)
                 merged.drop(columns='__merge_key', inplace=True)
 
-
-
-                # ============================
-                # SIMPAN KE SESSION STATE
-                # ============================
                 st.session_state['merged'] = merged
                 st.session_state['labels_rep'] = labels_rep
                 st.session_state['cluster_results'] = {
@@ -1556,9 +1479,9 @@ elif main == "Klasterisasi":
             except Exception as e:
                 st.error(f"Gagal menjalankan klasterisasi: {e}")
 
-        # ======================================================
-        # TAMPILKAN INTERPRETASI + DATA PEMOHON
-        # ======================================================
+        # ---------------------------
+        # interpretasi klaster
+        # ---------------------------
         if (
             st.session_state.get('klaster_sudah_dijalankan') is True
             and isinstance(st.session_state.get('cluster_results'), dict)
@@ -1568,18 +1491,18 @@ elif main == "Klasterisasi":
 
             df_final = st.session_state['cluster_results']['df_final']
 
-            # ======================================================
-            # REKOMENDASI INDIVIDU (DITURUNKAN DARI KLASTER)
-            # ======================================================
+            # ---------------------------
+            # rekomendasi individu
+            # ---------------------------
             df_tampil = df_final.copy()
             df_tampil['Rekomendasi Pelayanan'] = df_tampil.apply(
                 lambda row: rekomendasi_individu(row, st.session_state['df_wilayah']),
                 axis=1
             )
 
-            # ======================================================
-            # PENCARIAN PEMOHON INDIVIDUAL
-            # ======================================================
+            # ---------------------------
+            # pencarian pemohon
+            # ---------------------------
             st.markdown("### Cek Klaster Pemohon")
 
             with st.form("form_search"):
@@ -1593,8 +1516,6 @@ elif main == "Klasterisasi":
                 
                 with col2:
                     search = st.form_submit_button("Search", use_container_width=True)
-
-
 
             if keyword:
                 hasil_cari = df_tampil[
@@ -1652,9 +1573,9 @@ elif main == "Klasterisasi":
 
                 df_klaster = df_tampil[df_tampil['cluster'] == c]
 
-                # =========================
-                # INTERPRETASI KLASTER
-                # =========================
+                # ---------------------------
+                # penjelasan interpretasi per klaster
+                # ---------------------------
                 usia_min = df_klaster['usia_tahun'].min()
                 usia_max = df_klaster['usia_tahun'].max()
                 usia_mean = df_klaster['usia_tahun'].mean()
@@ -1689,9 +1610,9 @@ elif main == "Klasterisasi":
                 </div>
                 """, unsafe_allow_html=True)
 
-                # =========================
-                # DATA PEMOHON + REKOMENDASI
-                # =========================
+                # ---------------------------
+                # preview data pemohon per klaster + rekomendasi 
+                # ---------------------------
                 with st.expander("Lihat data pemohon"):
                     st.dataframe(
                         df_klaster[
@@ -1719,9 +1640,9 @@ elif main == "Klasterisasi":
                         height=380
                     )
 
-                    # =========================
-                    # DOWNLOAD EXCEL PER KLASTER
-                    # =========================
+                    # ---------------------------
+                    # download excel per klaster
+                    # ---------------------------
                     excel_buffer = io.BytesIO()
 
                     df_klaster[
@@ -1761,6 +1682,9 @@ elif main == "Klasterisasi":
 
                     st.markdown("<hr>", unsafe_allow_html=True)
 
+            # ---------------------------
+            # rekomendasi per klaster
+            # ---------------------------
             st.subheader("Rekomendasi Strategi Pelayanan Keimigrasian Berbasis Hasil Klasterisasi Pemohon Paspor")
 
             st.markdown("""
@@ -1808,14 +1732,9 @@ elif main == "Klasterisasi":
                     )
 
     # -------------------------
-    # VISUALISASI
+    # visualisasi
     # -------------------------
-    
     elif stage == "Visualisasi":
-
-        # =========================
-        # HEADER HALAMAN (WEB FEEL)
-        # =========================
         st.markdown("""
         <h2 style="text-align:center;">Visualisasi Hasil Klaster Pemohon Paspor</h2>
         <hr style="margin:30px 0;">
@@ -1828,7 +1747,6 @@ elif main == "Klasterisasi":
         df_final = st.session_state['df_final']
 
         with st.container():
-            # JUDUL CARD
             st.markdown(
                 "<p style='margin:0; font-weight:600; font-size:28px; color:#0A2540;'>"
                 "Ringkasan Hasil Klasterisasi"
@@ -1837,8 +1755,6 @@ elif main == "Klasterisasi":
             )
 
             st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
-
-            # ISI CARD (SEMUA METRIC MASUK)
             col1, col2, col3 = st.columns(3)
 
             with col1:
@@ -1852,22 +1768,20 @@ elif main == "Klasterisasi":
                     "Klaster Terbesar",
                     f"Klaster {df_final['cluster'].value_counts().idxmax()}"
                 )
-
-            # TUTUP DIV CARD
             st.markdown("</div>", unsafe_allow_html=True)
 
 
 
-        # =====================================================
-        # BAGIAN 1 — KARAKTERISTIK USIA
-        # =====================================================
+        # -------------------------
+        # usia
+        # -------------------------
         st.subheader("Karakteristik Usia Pemohon")
 
         col_left, col_right = st.columns(2)
 
-        # =========================
-        # BOX PLOT USIA PER KLASTER
-        # =========================
+        # -------------------------
+        # boxplot usia
+        # -------------------------
         with col_left:
             fig, ax = plt.subplots(figsize=(6, 4))
 
@@ -1881,7 +1795,6 @@ elif main == "Klasterisasi":
                 whiskerprops=dict(color='#0A2540'),
                 capprops=dict(color='#0A2540')
             )
-
             ax.set_title("Distribusi Usia per Klaster", fontsize=13, fontweight='bold')
             ax.set_xlabel("Klaster", fontsize=11)
             ax.set_ylabel("Usia (Tahun)", fontsize=11)
@@ -1894,9 +1807,9 @@ elif main == "Klasterisasi":
             st.pyplot(fig)
             plt.close(fig)
 
-        # =========================
-        # HISTOGRAM SEBARAN USIA
-        # =========================
+        # -------------------------
+        # histogram usia
+        # -------------------------
         with col_right:
             fig, ax = plt.subplots(figsize=(6, 4))
 
@@ -1908,7 +1821,6 @@ elif main == "Klasterisasi":
                     alpha=0.6,
                     label=f'Klaster {cluster_id}'
                 )
-
             ax.set_title("Pola Sebaran Usia Pemohon", fontsize=13, fontweight='bold')
             ax.set_xlabel("Usia (Tahun)", fontsize=11)
             ax.set_ylabel("Frekuensi", fontsize=11)
@@ -1926,16 +1838,14 @@ elif main == "Klasterisasi":
             st.pyplot(fig)
             plt.close(fig)
 
-
-        # =========================
-        # SEBARAN INDIVIDU (PENDUKUNG)
-        # =========================
+        # -------------------------
+        # scatter plot
+        # -------------------------
         col_pad_left, col_center, col_pad_right = st.columns([1, 2, 1])
 
         with col_center:
             fig, ax = plt.subplots(figsize=(6, 4))
 
-            # jitter untuk indeks individu (dummy)
             y_jitter = np.random.normal(0, 0.08, size=len(df_final))
 
             ax.scatter(
@@ -1960,7 +1870,6 @@ elif main == "Klasterisasi":
                 fontsize=11
             )
 
-            # y dummy → tidak perlu angka
             ax.set_yticks([])
 
             ax.grid(axis='x', linestyle='--', alpha=0.3)
@@ -1968,22 +1877,18 @@ elif main == "Klasterisasi":
             plt.tight_layout()
             st.pyplot(fig)
             plt.close(fig)
-
-
-
         st.markdown("<hr style='margin-top:20px; margin-bottom:20px;'>", unsafe_allow_html=True)
         
-
-        # =====================================================
-        # BAGIAN 2 — KOMPOSISI PEMOHON
-        # =====================================================
+        # -------------------------
+        # komposisi pemohon
+        # -------------------------
         st.subheader("Komposisi Pemohon per Klaster")
 
         col_left, col_right = st.columns(2)
 
-        # =========================
-        # KOMPOSISI JENIS KELAMIN
-        # =========================
+        # -------------------------
+        # jenis kelamin
+        # -------------------------
         with col_left:
             jk_cluster = (
                 df_final
@@ -2019,9 +1924,9 @@ elif main == "Klasterisasi":
             st.pyplot(fig)
             plt.close(fig)
 
-        # =========================
-        # STATUS PENGAMBILAN PASPOR
-        # =========================
+        # -------------------------
+        # status pengambilan
+        # -------------------------
         with col_right:
             status_cluster = (
                 df_final
@@ -2062,9 +1967,9 @@ elif main == "Klasterisasi":
             unsafe_allow_html=True
         )
 
-        # =====================================================
-        # BAGIAN 3 — SEBARAN WILAYAH
-        # =====================================================
+        # -------------------------
+        # sebaran wilayah
+        # -------------------------
         st.subheader("Sebaran Wilayah Asal Pemohon")
 
         top_n = 5
@@ -2115,9 +2020,9 @@ elif main == "Klasterisasi":
             unsafe_allow_html=True
         )
 
-        # =========================
-        # DOWNLOAD PDF
-        # =========================
+        # -------------------------
+        # download pdf
+        # -------------------------
         st.markdown("""
         <style>
         div[data-testid="stDownloadButton"] > button {
