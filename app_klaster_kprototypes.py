@@ -883,6 +883,45 @@ with st.sidebar:
 # -------------------------
 if main == "Beranda":
 
+    import base64
+
+    def get_base64_image(path):
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+
+    logo_base64 = get_base64_image("logo.png")
+
+    st.markdown(
+        f"""
+        <style>
+        .watermark {{
+            position: fixed;
+            top: 55%;              /* agak ke bawah */
+            left: 60%;             /* geser ke kanan */
+            transform: translate(-50%, -50%);
+            opacity: 0.15;         /* lebih kelihatan */
+            z-index: 0;
+            pointer-events: none;
+        }}
+        .watermark img {{
+            width: 420px;          /* lebih besar */
+        }}
+        .content {{
+            position: relative;
+            z-index: 1;
+        }}
+        </style>
+
+        <div class="watermark">
+            <img src="data:image/png;base64,{logo_base64}">
+        </div>
+
+        <div class="content">
+        """,
+        unsafe_allow_html=True
+    )
+
+
     st.markdown(
         "<h1 style='text-align:center; margin-bottom:0px'>"
         "Aplikasi Klasterisasi Data Pemohon Paspor Berdasarkan Karakteristik Pemohon Menggunakan Algoritma K-Prototypes<br>"
@@ -950,6 +989,8 @@ if main == "Beranda":
             """,
             unsafe_allow_html=True
         )
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 # -------------------------
 # tahapan klasterisasi 
@@ -1506,23 +1547,42 @@ elif main == "Klasterisasi":
             st.markdown("### Cek Klaster Pemohon")
 
             with st.form("form_search"):
-                col1, col2 = st.columns([6, 1], vertical_alignment="bottom")
+                col1, col2, col3 = st.columns([5, 3, 1], vertical_alignment="bottom")
 
                 with col1:
                     keyword = st.text_input(
-                        "Masukkan nama / nomor permohonan / nomor paspor",
+                        "Nama / Nomor Permohonan / Nomor Paspor",
                         placeholder="Contoh: Andi / 123456 / A1234567"
                     )
-                
-                with col2:
-                    search = st.form_submit_button("Search", use_container_width=True)
 
-            if keyword:
-                hasil_cari = df_tampil[
-                    df_tampil['nama'].str.contains(keyword, case=False, na=False) |
-                    df_tampil['nopermohonan'].astype(str).str.contains(keyword, na=False) |
-                    df_tampil['nopaspor'].astype(str).str.contains(keyword, na=False)
-                ]
+                from datetime import date
+
+                with col2:
+                    tgl_lahir = st.date_input(
+                        "Tanggal Lahir (opsional)",
+                        min_value=date(1900, 1, 1),
+                        max_value=date.today(),
+                        value=None
+                    )
+
+                with col3:
+                    search = st.form_submit_button("Search", use_container_width=True)
+            if search:
+                hasil_cari = df_tampil.copy()
+
+                # Filter berdasarkan keyword
+                if keyword:
+                    hasil_cari = hasil_cari[
+                        hasil_cari['nama'].str.contains(keyword, case=False, na=False) |
+                        hasil_cari['nopermohonan'].astype(str).str.contains(keyword, na=False) |
+                        hasil_cari['nopaspor'].astype(str).str.contains(keyword, na=False)
+                    ]
+
+                # Filter tambahan berdasarkan tanggal lahir (jika diisi)
+                if tgl_lahir:
+                    hasil_cari = hasil_cari[
+                        pd.to_datetime(hasil_cari['tanggallahir']).dt.date == tgl_lahir
+                    ]
 
                 if hasil_cari.empty:
                     st.warning("Data pemohon tidak ditemukan.")
@@ -1542,23 +1602,23 @@ elif main == "Klasterisasi":
                     st.dataframe(
                         hasil_cari[
                             [
-                            'id',
-                            'nopermohonan',
-                            'nama',
-                            'tempat_lahir',
-                            'tanggallahir',
-                            'jenis_kelamin',
-                            'notelepon',
-                            'nopaspor',
-                            'kodebilling',
-                            'tanggalsimpan',
-                            'tanggalambil',
-                            'smsgateway',
-                            'koderak',
-                            'status',
-                            'usia_tahun',
-                            'cluster',
-                            'Rekomendasi Pelayanan'
+                                'id',
+                                'nopermohonan',
+                                'nama',
+                                'tempat_lahir',
+                                'tanggallahir',
+                                'jenis_kelamin',
+                                'notelepon',
+                                'nopaspor',
+                                'kodebilling',
+                                'tanggalsimpan',
+                                'tanggalambil',
+                                'smsgateway',
+                                'koderak',
+                                'status',
+                                'usia_tahun',
+                                'cluster',
+                                'Rekomendasi Pelayanan'
                             ]
                         ],
                         use_container_width=True,
@@ -1566,6 +1626,8 @@ elif main == "Klasterisasi":
                     )
 
                     st.markdown("<hr>", unsafe_allow_html=True)
+
+
 
             for c in sorted(df_tampil['cluster'].unique()):
                 if c == -1:
